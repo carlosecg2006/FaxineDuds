@@ -19,16 +19,20 @@ um conceito por vez, sem enrolação.
    AppData e pastas de programas. Lista de bloqueio configurável.
 4. O índice não copia arquivos: guarda só os dados (SQLite) com caminho,
    tamanho, datas, hash, tipo e descrição da IA. Exceções: miniaturas
-   pequenas de imagens (Fase 8) e cópias que o usuário pedir
-   explicitamente (Fase 8), sempre verificadas por hash.
+   pequenas de imagens (Fases 8 e 9), envios ao Arquivo Morto (Fase 8)
+   e cópias que o usuário pedir explicitamente (Fase 9), sempre
+   verificadas por hash.
 5. Durante o desenvolvimento, testar SÓ em `D:\FaxineDuds\pasta_teste`.
-6. Internet só quando o usuário ativar, e só para pesquisar o que
-   um arquivo desconhecido é (nunca enviar o conteúdo do arquivo).
-   O servidor da Fase 9 fica só na rede de casa (ou Tailscale) e não
+6. Internet só quando o usuário ativar, e só para duas coisas:
+   - pesquisa de arquivos desconhecidos (Fase 6): envia só nome/tipo,
+     nunca o conteúdo;
+   - Arquivo Morto (Fase 8): envia o arquivo sempre criptografado
+     (rclone crypt), para a nuvem que o usuário escolheu.
+   O servidor da Fase 10 fica só na rede de casa (ou Tailscale) e não
    conta como internet.
 7. Nunca formatar nenhum disco, pendrive ou cartão.
 8. Todo arquivo no índice tem, desde a Fase 1, os campos `aparelho`
-   (pc, hd_externo, celular...) e `conectado` (sim/não).
+   (pc, hd_externo, celular, nuvem...) e `conectado` (sim/não).
 
 ## Regras para o Claude (desenvolvimento)
 As regras de bloqueio em `.claude/settings.json` só comparam o texto do
@@ -58,7 +62,8 @@ bloqueio não pegaria:
 - SQLite para o índice
 - Hash BLAKE3 para duplicados (tamanho → hash parcial → hash completo)
 - Ollama local (modelo de texto leve; modelo de visão opcional)
-- Fase 9: FastAPI (servidor local) + PWA (versão web para o celular)
+- Fase 8: rclone com remoto `crypt` (Google Drive por padrão, trocável)
+- Fase 10: FastAPI (servidor local) + PWA (versão web para o celular)
 - Testes com pytest; commit no Git ao fim de cada fase
 
 ## Roteiro
@@ -72,10 +77,22 @@ bloqueio não pegaria:
 | 5 | Interface | App gráfico em PySide6 |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador |
-| 8 | HD externo, pendrive e cartão | Ver abaixo |
-| 9 | Celular | Ver abaixo |
+| 8 | Arquivo Morto na nuvem | Ver abaixo |
+| 9 | HD externo, pendrive e cartão | Ver abaixo |
+| 10 | Celular | Ver abaixo |
 
-### Fase 8 — HD externo, pendrive e cartão
+### Fase 8 — Arquivo Morto na nuvem
+- O usuário escolhe arquivos e clica em "Arquivar".
+- O app usa o rclone com criptografia (`crypt`) para enviar à nuvem
+  (Google Drive por padrão, trocável por outro serviço do rclone).
+- Confere cada cópia na nuvem por hash; só depois disso o original vai
+  para a `_quarentena` (nunca é apagado direto).
+- No índice ficam miniatura, descrição e o novo local
+  (`aparelho = nuvem`).
+- "Trazer de volta" baixa o arquivo, confere o hash e devolve ao lugar.
+- Aviso visual para arquivos que só existem em 1 lugar (sem cópia).
+
+### Fase 9 — HD externo, pendrive e cartão
 - Detectar quando um HD, pendrive ou cartão é plugado.
 - Identificar cada um pelo número de série do volume (não pela letra da
   unidade, que muda).
@@ -85,7 +102,7 @@ bloqueio não pegaria:
 - Galeria de imagens.
 - Nunca formatar.
 
-### Fase 9 — Celular
+### Fase 10 — Celular
 - Antes: estudar LocalSend e Syncthing.
 - Servidor local (FastAPI) que só aceita conexões da rede de casa,
   com pareamento por código.
