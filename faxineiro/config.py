@@ -32,6 +32,9 @@ TEMP_EXTENSOES: set[str] = {"tmp", "temp", "crdownload", "part", "partial"}
 TEMP_PREFIXOS: tuple[str, ...] = ("~$",)  # rascunhos do Office
 TEMP_NOMES: set[str] = {"thumbs.db", ".ds_store"}
 TOP_PESADOS = 20
+MB = 1024 * 1024
+PESADO_MINIMO = 100 * MB  # só conta como "pesado" a partir daqui
+PESADO_MINIMO_TESTE = 1 * MB  # modo de teste (--teste), para os arquivos pequenos da pasta_teste
 
 
 class Bloqueios:

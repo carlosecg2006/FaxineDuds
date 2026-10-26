@@ -7,7 +7,15 @@ import sys
 from pathlib import Path
 
 from . import raiox
-from .config import CAMINHO_INDICE, PASTA_TESTE, TOP_PESADOS, dentro_da_pasta_teste
+from .config import (
+    CAMINHO_INDICE,
+    MB,
+    PASTA_TESTE,
+    PESADO_MINIMO,
+    PESADO_MINIMO_TESTE,
+    TOP_PESADOS,
+    dentro_da_pasta_teste,
+)
 from .hashes import Hasher
 from .indice import Indice
 from .scanner import Progresso, escanear
@@ -80,6 +88,13 @@ def _titulo(texto: str) -> None:
     print(f"== {texto} ".ljust(60, "="))
 
 
+def minimo_pesado(args: argparse.Namespace) -> int:
+    """--minimo-mb vence; senão --teste usa o mínimo pequeno; senão o padrão (100 MB)."""
+    if args.minimo_mb is not None:
+        return int(args.minimo_mb * MB)
+    return PESADO_MINIMO_TESTE if args.teste else PESADO_MINIMO
+
+
 def cmd_raiox(args: argparse.Namespace) -> int:
     pasta = Path(args.pasta)
     if (erro := _pasta_permitida(pasta)) is not None:
@@ -104,7 +119,8 @@ def cmd_raiox(args: argparse.Namespace) -> int:
         lx = raiox.lixo(indice, base)
         errados = raiox.extensao_errada(indice, base)
         vazias = raiox.pastas_vazias(base)
-        grandes = raiox.pesados(indice, base, args.top)
+        minimo = minimo_pesado(args)
+        grandes = raiox.pesados(indice, base, args.top, minimo)
         categorias = raiox.totais_por_categoria(indice, base)
 
         _titulo("Resumo")
@@ -129,7 +145,9 @@ def cmd_raiox(args: argparse.Namespace) -> int:
         for e in dup.erros:
             print(f"  erro: {e}")
 
-        _titulo(f"Pesados (top {args.top})")
+        _titulo(f"Pesados (a partir de {formatar_bytes(minimo)}, top {args.top})")
+        if not grandes:
+            print(f"  Nenhum arquivo com {formatar_bytes(minimo)} ou mais.")
         for a in grandes:
             print(f"  {formatar_bytes(a['tamanho']):>10}  {_relativo(a['caminho'], base)}")
         print("  Por categoria:")
@@ -157,7 +175,15 @@ def cmd_raiox(args: argparse.Namespace) -> int:
     return 0
 
 
+def _saida_em_utf8() -> None:
+    """No Windows, saída redirecionada (arquivo/pipe) usa cp1252 e quebra com "→" e "…"."""
+    for fluxo in (sys.stdout, sys.stderr):
+        if hasattr(fluxo, "reconfigure"):
+            fluxo.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _saida_em_utf8()
     parser = argparse.ArgumentParser(prog="faxineiro")
     sub = parser.add_subparsers(dest="comando", required=True)
 
@@ -169,6 +195,10 @@ def main(argv: list[str] | None = None) -> int:
     rx = sub.add_parser("raiox", help="mostra duplicados, arquivos pesados e lixo")
     rx.add_argument("pasta", nargs="?", default=str(PASTA_TESTE))
     rx.add_argument("--top", type=int, default=TOP_PESADOS, help="quantos arquivos pesados mostrar")
+    rx.add_argument("--minimo-mb", type=float, default=None,
+                    help=f"tamanho mínimo de um arquivo pesado, em MB (padrão {PESADO_MINIMO // MB})")
+    rx.add_argument("--teste", action="store_true",
+                    help=f"modo de teste: mínimo de {PESADO_MINIMO_TESTE // MB} MB para a pasta_teste")
     rx.add_argument("--indice", default=str(CAMINHO_INDICE), help=argparse.SUPPRESS)
     rx.set_defaults(func=cmd_raiox)
 

@@ -215,10 +215,11 @@ class Indice:
             (parcial, completo, agora, arquivo_id),
         )
 
-    def maiores(self, prefixo: str, limite: int) -> list[sqlite3.Row]:
+    def maiores(self, prefixo: str, limite: int, minimo: int = 0) -> list[sqlite3.Row]:
         return self.con.execute(
-            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? ORDER BY tamanho DESC, caminho LIMIT ?",
-            (len(prefixo), prefixo, limite),
+            """SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho >= ?
+               ORDER BY tamanho DESC, caminho LIMIT ?""",
+            (len(prefixo), prefixo, minimo, limite),
         ).fetchall()
 
     def totais_por_categoria(self, prefixo: str) -> list[sqlite3.Row]:

@@ -163,8 +163,14 @@ def encontrar_duplicados(
 # --- pesados e lixo -------------------------------------------------------
 
 
-def pesados(indice: Indice, pasta: str | Path, limite: int = config.TOP_PESADOS) -> list[sqlite3.Row]:
-    return indice.maiores(prefixo_da_pasta(pasta), limite)
+def pesados(
+    indice: Indice,
+    pasta: str | Path,
+    limite: int = config.TOP_PESADOS,
+    minimo: int = config.PESADO_MINIMO,
+) -> list[sqlite3.Row]:
+    """Os maiores arquivos com pelo menos `minimo` bytes (padrão 100 MB)."""
+    return indice.maiores(prefixo_da_pasta(pasta), limite, minimo)
 
 
 def totais_por_categoria(indice: Indice, pasta: str | Path) -> list[sqlite3.Row]:

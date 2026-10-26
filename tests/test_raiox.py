@@ -1,4 +1,5 @@
 import os
+import random
 
 import pytest
 
@@ -7,6 +8,11 @@ from faxineiro.__main__ import main
 from faxineiro.config import Bloqueios
 from faxineiro.hashes import TAMANHO_PARCIAL, Hasher
 from faxineiro.scanner import escanear
+
+
+def _bytes(semente: int, tamanho: int) -> bytes:
+    """Bytes "aleatórios" mas sempre os mesmos (teste estável: nunca imitam outro formato por acaso)."""
+    return random.Random(semente).randbytes(tamanho)
 
 
 def _avancar_mtime(caminho, segundos=5):
@@ -20,12 +26,12 @@ def bagunca(tmp_path):
     raiz = tmp_path / "bagunca"
     (raiz / "a").mkdir(parents=True)
     (raiz / "b" / "c").mkdir(parents=True)
-    foto = os.urandom(5000)
+    foto = _bytes(1, 5000)
     (raiz / "foto.jpg").write_bytes(foto)
     (raiz / "a" / "foto (1).jpg").write_bytes(foto)
     (raiz / "b" / "c" / "foto copia.jpg").write_bytes(foto)
     # Grandes, mesmo tamanho, começo igual, só o último byte diferente.
-    comum = os.urandom(TAMANHO_PARCIAL * 4)
+    comum = _bytes(2, TAMANHO_PARCIAL * 4)
     (raiz / "video1.bin").write_bytes(comum + b"1")
     (raiz / "video2.bin").write_bytes(comum + b"2")
     (raiz / "unico.txt").write_text("só existe um de mim", encoding="utf-8")
@@ -89,7 +95,7 @@ def test_segunda_vez_usa_cache(escaneada, indice):
 def test_arquivo_alterado_e_reescaneado_e_relido(escaneada, indice):
     raiox.encontrar_duplicados(indice, escaneada)
     alvo = escaneada / "a" / "foto (1).jpg"
-    alvo.write_bytes(os.urandom(5000))
+    alvo.write_bytes(_bytes(3, 5000))
     _avancar_mtime(alvo)
     escanear(escaneada, indice)
     hasher = Hasher()
@@ -100,7 +106,7 @@ def test_arquivo_alterado_e_reescaneado_e_relido(escaneada, indice):
 
 def test_indice_desatualizado_gera_aviso(escaneada, indice):
     alvo = escaneada / "a" / "foto (1).jpg"
-    alvo.write_bytes(os.urandom(5000))
+    alvo.write_bytes(_bytes(3, 5000))
     _avancar_mtime(alvo)  # mudou, mas ninguém rodou escanear
     r = raiox.encontrar_duplicados(indice, escaneada)
     assert str(alvo) in r.desatualizados
@@ -121,8 +127,27 @@ def test_sugere_manter_o_mais_antigo():
     assert raiox._sugerir_manter(arquivos)["caminho"].endswith("caminho_bem_longo.jpg")
 
 
+def test_pesados_respeita_minimo(escaneada, indice):
+    assert raiox.pesados(indice, escaneada) == []  # padrão 100 MB: nada aqui é pesado
+    assert _nomes(raiox.pesados(indice, escaneada, minimo=200_000)) == ["video1.bin", "video2.bin"]
+    assert _nomes(raiox.pesados(indice, escaneada, minimo=5000)) == [
+        "foto (1).jpg", "foto copia.jpg", "foto.jpg", "video1.bin", "video2.bin"]
+
+
+def test_minimo_da_linha_de_comando():
+    import argparse
+
+    from faxineiro.__main__ import minimo_pesado
+    from faxineiro.config import MB, PESADO_MINIMO, PESADO_MINIMO_TESTE
+
+    assert PESADO_MINIMO == 100 * MB
+    assert minimo_pesado(argparse.Namespace(minimo_mb=None, teste=False)) == PESADO_MINIMO
+    assert minimo_pesado(argparse.Namespace(minimo_mb=None, teste=True)) == PESADO_MINIMO_TESTE
+    assert minimo_pesado(argparse.Namespace(minimo_mb=0.5, teste=True)) == MB // 2
+
+
 def test_pesados_e_categorias(escaneada, indice):
-    grandes = raiox.pesados(indice, escaneada, 2)
+    grandes = raiox.pesados(indice, escaneada, 2, minimo=0)
     assert _nomes(grandes) == ["video1.bin", "video2.bin"]
     cats = {c["categoria"]: c["quantidade"] for c in raiox.totais_por_categoria(indice, escaneada)}
     assert cats["outro"] >= 5  # bytes aleatórios (fotos e vídeos falsos) caem em "outro"
