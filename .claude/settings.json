@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(git status)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(ollama *)",
+      "PowerShell(python *)",
+      "PowerShell(pip *)",
+      "PowerShell(git status)",
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)",
+      "PowerShell(ollama *)"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(del *)",
+      "Bash(rmdir *)",
+      "Bash(Remove-Item *)",
+      "Bash(format *)",
+      "Bash(git push *)",
+      "PowerShell(rm *)",
+      "PowerShell(del *)",
+      "PowerShell(rmdir *)",
+      "PowerShell(rd *)",
+      "PowerShell(ri *)",
+      "PowerShell(erase *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(format *)",
+      "PowerShell(Format-Volume *)",
+      "PowerShell(git push *)",
+      "Bash(python -c *)",
+      "PowerShell(python -c *)",
+      "Bash(git clean *)",
+      "PowerShell(git clean *)",
+      "Bash(git reset --hard*)",
+      "PowerShell(git reset --hard*)",
+      "Edit(//c/Windows/**)",
+      "Edit(//c/Program Files/**)"
+    ]
+  }
+}
