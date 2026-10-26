@@ -16,7 +16,7 @@ from .config import (
     TOP_PESADOS,
     dentro_da_pasta_teste,
 )
-from . import cli_quarentena
+from . import cli_ia, cli_quarentena
 from .formato import formatar_bytes
 from .formato import numero as _numero
 from .formato import relativo as _relativo
@@ -188,6 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     rx.set_defaults(func=cmd_raiox)
 
     cli_quarentena.registrar(sub)
+    cli_ia.registrar(sub)
 
     args = parser.parse_args(argv)
     return args.func(args)

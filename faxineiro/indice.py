@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSAO_ESQUEMA = 3
+VERSAO_ESQUEMA = 4
 
 # Migrações aplicadas em ordem: a chave é a versão que o banco passa a ter.
 _MIGRACOES: dict[int, str] = {
@@ -40,6 +40,15 @@ _MIGRACOES: dict[int, str] = {
     );
     CREATE INDEX IF NOT EXISTS idx_operacoes_estado ON operacoes (estado);
     CREATE INDEX IF NOT EXISTS idx_operacoes_situacao ON operacoes (situacao);
+    """,
+    # Fase 4: descrição feita pela IA (ou por regras) e pasta sugerida.
+    4: """
+    ALTER TABLE arquivos ADD COLUMN descricao TEXT;
+    ALTER TABLE arquivos ADD COLUMN descricao_origem TEXT;  -- ia | ia_visao | regras
+    ALTER TABLE arquivos ADD COLUMN descricao_em TEXT;
+    ALTER TABLE arquivos ADD COLUMN revisar INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE arquivos ADD COLUMN pasta_sugerida TEXT;
+    ALTER TABLE operacoes ADD COLUMN pastas_criadas TEXT;  -- JSON: pastas que o organizar criou
     """,
 }
 
@@ -178,6 +187,8 @@ class Indice:
                 categoria = excluded.categoria, extensao_confere = excluded.extensao_confere,
                 aparelho = excluded.aparelho, conectado = excluded.conectado,
                 hash_parcial = NULL, hash_completo = NULL, hash_em = NULL,
+                descricao = NULL, descricao_origem = NULL, descricao_em = NULL,
+                revisar = 0, pasta_sugerida = NULL,
                 visto_em = excluded.visto_em, indexado_em = excluded.indexado_em
             """,
             (r.caminho, r.pasta_raiz, r.nome, r.extensao, r.tamanho, r.criado_em,
@@ -297,13 +308,15 @@ class Indice:
     def registrar_operacao(
         self, *, lote_id: int, tipo: str, origem: str, destino: str, pasta_raiz: str | None,
         tamanho: int | None, hash_completo: str | None, ref_operacao: int | None, agora: str,
+        pastas_criadas: str | None = None,
     ) -> int:
         """Grava a intenção ANTES de mexer no disco (estado em_andamento) e confirma na hora."""
         cur = self.con.execute(
             """INSERT INTO operacoes (lote_id, tipo, origem, destino, pasta_raiz, tamanho,
-                   hash_completo, estado, ref_operacao, criado_em)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'em_andamento', ?, ?)""",
-            (lote_id, tipo, origem, destino, pasta_raiz, tamanho, hash_completo, ref_operacao, agora),
+                   hash_completo, estado, ref_operacao, criado_em, pastas_criadas)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'em_andamento', ?, ?, ?)""",
+            (lote_id, tipo, origem, destino, pasta_raiz, tamanho, hash_completo, ref_operacao, agora,
+             pastas_criadas),
         )
         self.con.commit()
         return cur.lastrowid
@@ -327,6 +340,20 @@ class Indice:
             "SELECT * FROM operacoes WHERE estado = 'em_andamento' ORDER BY id"
         ).fetchall()
 
+    def itens_desfaziveis(self, *, item: int | None = None, lote: int | None = None) -> list[sqlite3.Row]:
+        """O que dá para desfazer: arquivos na quarentena e arquivos movidos pelo organizar."""
+        sql = """SELECT * FROM operacoes WHERE
+                 ((tipo = 'quarentena' AND situacao = 'na_quarentena')
+                  OR (tipo = 'organizar' AND situacao = 'organizado'))"""
+        args: list[int] = []
+        if item is not None:
+            sql += " AND id = ?"
+            args.append(item)
+        if lote is not None:
+            sql += " AND lote_id = ?"
+            args.append(lote)
+        return self.con.execute(sql + " ORDER BY id", args).fetchall()
+
     def itens_na_quarentena(self, *, item: int | None = None, lote: int | None = None) -> list[sqlite3.Row]:
         sql = "SELECT * FROM operacoes WHERE tipo = 'quarentena' AND situacao = 'na_quarentena'"
         args: list[int] = []
@@ -337,6 +364,46 @@ class Indice:
             sql += " AND lote_id = ?"
             args.append(lote)
         return self.con.execute(sql + " ORDER BY id", args).fetchall()
+
+    # --- IA (Fase 4) ------------------------------------------------------------
+
+    def _consulta_com_limite(self, sql: str, args: list, limite: int | None) -> list[sqlite3.Row]:
+        if limite is not None:
+            sql += " LIMIT ?"
+            args.append(limite)
+        return self.con.execute(sql, args).fetchall()
+
+    def pendentes_de_descricao(self, prefixo: str, *, limite: int | None = None) -> list[sqlite3.Row]:
+        """Arquivos sem nenhuma descrição (novos ou alterados)."""
+        return self._consulta_com_limite(
+            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND descricao IS NULL ORDER BY caminho",
+            [len(prefixo), prefixo], limite)
+
+    def pendentes_de_revisao(self, prefixo: str, *, limite: int | None = None) -> list[sqlite3.Row]:
+        """Arquivos que as regras marcaram "revisar" (a IA pode melhorar a descrição)."""
+        return self._consulta_com_limite(
+            """SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND revisar = 1
+               ORDER BY caminho""",
+            [len(prefixo), prefixo], limite)
+
+    def gravar_descricao(self, arquivo_id: int, descricao: str, origem: str, revisar: bool, agora: str) -> None:
+        self.con.execute(
+            """UPDATE arquivos SET descricao = ?, descricao_origem = ?, revisar = ?, descricao_em = ?
+               WHERE id = ?""",
+            (descricao, origem, int(revisar), agora, arquivo_id),
+        )
+
+    def gravar_pasta_sugerida(self, arquivo_id: int, pasta: str | None) -> None:
+        self.con.execute("UPDATE arquivos SET pasta_sugerida = ? WHERE id = ?", (pasta, arquivo_id))
+
+    def mudar_caminho(self, antigo: str, novo: str, pasta_raiz: str | None = None) -> None:
+        """Arquivo foi movido: troca só o caminho, mantendo descrição, hashes e o resto."""
+        nome = Path(novo).name
+        self.con.execute(
+            """UPDATE arquivos SET caminho = ?, nome = ?, pasta_raiz = COALESCE(?, pasta_raiz)
+               WHERE caminho = ?""",
+            (novo, nome, pasta_raiz, antigo),
+        )
 
     def lotes_na_quarentena(self) -> list[sqlite3.Row]:
         """Resumo por lote do que ainda está na quarentena: quantidade, bytes e desde quando."""

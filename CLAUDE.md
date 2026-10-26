@@ -58,13 +58,17 @@ bloqueio não pegaria:
 ## Ambiente
 - Windows 11, PowerShell como shell principal.
 - Projeto em `D:\FaxineDuds`, versionado com Git (local, sem remoto).
-- Ollama instalado com o modelo `qwen2.5:3b`.
+- **PC com 4 GB de RAM** (≈0,4–0,6 GB disponíveis com os programas abertos)
+  e 4 núcleos. Tudo que usa IA precisa caber nisso.
+- Ollama com `qwen2.5:0.5b` (padrão), `qwen2.5:1.5b` e `qwen2.5:3b` baixados.
+  O 3b não cabe neste PC (1,9 GB; travou em teste de 26/10/2026).
 
 ## Tecnologia
 - Python 3.11+, interface PySide6 (Qt)
 - SQLite para o índice
 - Hash BLAKE3 para duplicados (tamanho → hash parcial → hash completo)
-- Ollama local (modelo de texto leve; modelo de visão opcional)
+- Ollama local: modelo configurável (`config.MODELO_IA`, padrão `qwen2.5:0.5b`;
+  trocar com `--modelo` ou a variável `FAXINEIRO_MODELO`). Visão só se instalada.
 - Fase 5B: ffmpeg (vídeo/áudio), Pillow (imagens), LibreOffice (documentos)
 - Fase 8: rclone com remoto `crypt` (Google Drive por padrão, trocável)
 - Fase 10: FastAPI (servidor local) + PWA (versão web para o celular)
@@ -76,7 +80,7 @@ bloqueio não pegaria:
 | 0 | Estudo de referência | Concluída — `docs/estudo.md` |
 | 1 | Scanner e índice | Concluída — varrer pastas e gravar no SQLite (com `aparelho` e `conectado`) |
 | 2 | Raio-X | Concluída — duplicados, arquivos pesados e lixo |
-| 3 | Quarentena e desfazer | Mover para `_quarentena` com diário de operações (ideia do fo-core) |
+| 3 | Quarentena e desfazer | Concluída — mover para `_quarentena` com diário de operações (ideia do fo-core) |
 | 4 | IA local | Descrever e classificar arquivos com Ollama; modo sem IA |
 | 5 | Interface | App gráfico em PySide6 |
 | 5B | Conversor de arquivos | Ver abaixo |
@@ -171,4 +175,18 @@ bloqueio não pegaria:
   Arquivo em uso / sem permissão vira "falhou" na hora, sem mudar nada
   (`mensagem_de_erro` traduz os erros do Windows). `listar` mostra o espaço
   total e há quantos dias cada lote está lá. 95 testes.
-- Próxima: Fase 4 — IA local (Ollama).
+- Fase 4 — em andamento (ajustada para 4 GB de RAM). Feito: `ia.py` (cliente
+  só localhost; `avaliar_ia` confere RAM disponível vs. tamanho do modelo e
+  cai para regras com aviso; `num_ctx` 1024, `num_thread` = todos os núcleos,
+  `keep_alive` 30 s e `descarregar()` ao terminar), `memoria.py`,
+  `extracao.py` (começo do texto, 1.500 caracteres), `descricoes.py` (IA
+  seletiva: regras descrevem tudo; a IA só o que ficou "revisar" — texto,
+  documentos, desconhecidos; lotes, pausa/retomada, falhas seguidas),
+  `organizacao.py` (sugere pastas; aplica pela operação `organizar` da Fase 3,
+  com diário e desfazer). Esquema v4. CLI: `ia status|descrever|arquivo|organizar`.
+  Comparação em `docs/comparacao_modelos.md`: o 1.5b descreve melhor, mas
+  derrubou a RAM disponível a 6 MB → não cabe com os programas abertos; o
+  0.5b cabe (mínimo de 139 MB). 165 testes.
+  Falta: os três acréscimos que o Carlos vai reenviar (estimativa de tempo e
+  prioridade, pastas-bloco, nunca organizar pastas de nuvem) e a demonstração
+  real do `ia organizar` na pasta_teste.

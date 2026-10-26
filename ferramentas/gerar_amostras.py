@@ -51,7 +51,65 @@ def amostras() -> dict[str, bytes]:
     arquivos["Downloads/programa.exe.crdownload"] = b"download pela metade" * 50
     arquivos["Downloads/cache.tmp"] = b"temporario" * 30
     arquivos["Fotos/Thumbs.db"] = b"miniaturas do windows" * 10
+    # Fase 4 (IA): 10 arquivos com conteúdo de verdade, para comparar modelos.
+    for nome, texto in AMOSTRAS_IA.items():
+        arquivos[f"Amostras_IA/{nome}"] = texto.encode("utf-8")
+    arquivos["Amostras_IA/contrato_aluguel.docx"] = bytes_docx_com_texto(
+        "CONTRATO DE LOCAÇÃO RESIDENCIAL. Locador: João Pereira. Locatária: Ana Souza. "
+        "Imóvel: Rua das Flores, 120, apto 32, Campinas-SP. Prazo de 30 meses a partir de 01/02/2026. "
+        "Aluguel mensal de R$ 1.450,00 com vencimento todo dia 10, reajustado pelo IGP-M.")
     return arquivos
+
+
+AMOSTRAS_IA = {
+    "receita_bolo_cenoura.txt": (
+        "Bolo de cenoura da vó\n\nIngredientes:\n- 3 cenouras médias\n- 4 ovos\n- 1 xícara de óleo\n"
+        "- 2 xícaras de açúcar\n- 2 xícaras de farinha de trigo\n- 1 colher de fermento\n\n"
+        "Modo de preparo: bata no liquidificador a cenoura, os ovos e o óleo. Misture o açúcar e a farinha, "
+        "e por último o fermento. Asse por 40 minutos a 180 graus. Cobertura de chocolate opcional.\n"),
+    "anotacoes_aula_redes.md": (
+        "# Redes de Computadores — Aula 7 (14/10)\n\n## Modelo TCP/IP\n- Camada de aplicação: HTTP, DNS, SMTP\n"
+        "- Transporte: TCP (confiável, com handshake) e UDP (sem conexão)\n- Rede: IP, roteamento\n\n"
+        "## Para a prova\n- Diferença entre TCP e UDP\n- Máscara de sub-rede /24 = 255.255.255.0\n"
+        "- Exercício: calcular faixa de IPs da rede 192.168.10.0/26\n"),
+    "gastos_outubro.csv": (
+        "data;descricao;categoria;valor\n01/10/2026;Aluguel;Moradia;1450,00\n03/10/2026;Mercado Extra;Alimentação;"
+        "312,45\n05/10/2026;Conta de luz;Moradia;187,90\n08/10/2026;Uber;Transporte;23,50\n"
+        "12/10/2026;Farmácia;Saúde;64,30\n15/10/2026;Internet;Moradia;99,90\n20/10/2026;Ifood;Alimentação;58,00\n"),
+    "curriculo_carlos.txt": (
+        "Carlos Eduardo — Currículo\nEstudante de Análise e Desenvolvimento de Sistemas (4º semestre)\n\n"
+        "Objetivo: estágio em desenvolvimento de software.\n\nConhecimentos: Python, SQL, Git, HTML/CSS, "
+        "noções de Java.\nProjetos: Faxineiro — organizador de arquivos com IA local (Python, SQLite, Ollama).\n"
+        "Idiomas: inglês intermediário.\nContato: (19) 99999-0000\n"),
+    "backup_fotos.py": (
+        "import shutil\nfrom pathlib import Path\n\n# Copia as fotos do celular para o HD externo, por ano\n"
+        "ORIGEM = Path('E:/DCIM/Camera')\nDESTINO = Path('F:/Backup/Fotos')\n\nfor foto in ORIGEM.glob('*.jpg'):\n"
+        "    ano = foto.stat().st_mtime\n    destino = DESTINO / str(ano)\n    destino.mkdir(parents=True, exist_ok=True)\n"
+        "    shutil.copy2(foto, destino)\n"),
+    "email_professor.txt": (
+        "Assunto: Entrega do trabalho de Banco de Dados\n\nOlá, professor Marcos,\n\nGostaria de pedir mais dois "
+        "dias para entregar o trabalho de modelagem do banco de dados da clínica veterinária, porque meu "
+        "notebook estragou na semana passada. Já terminei o diagrama ER e falta só a normalização.\n\n"
+        "Obrigado,\nCarlos\n"),
+    "lista_compras.txt": "Lista de compras do mês\n- arroz 5kg\n- feijão\n- café\n- leite (6)\n- detergente\n- papel higiênico\n- frango\n- banana\n",
+    "log_erro_servidor.log": (
+        "2026-10-20 14:02:11 ERROR [api] Falha ao conectar no banco de dados: timeout após 30s\n"
+        "2026-10-20 14:02:11 WARN  [api] Tentando reconectar (tentativa 1 de 5)\n"
+        "2026-10-20 14:02:41 ERROR [api] Falha ao conectar no banco de dados: timeout após 30s\n"
+        "2026-10-20 14:03:12 INFO  [api] Conexão restabelecida com postgres://localhost:5432/loja\n"),
+    "senha_wifi_casa.txt": "Rede: CasaDosSilva_5G\nSenha do roteador: troque-esta-senha\nIP do roteador: 192.168.0.1\n",
+}
+
+
+def bytes_docx_com_texto(texto: str) -> bytes:
+    content_types = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        b'<Override PartName="/word/document.xml" ContentType="application/'
+        b'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+    )
+    corpo = f"<w:document><w:body><w:p><w:r><w:t>{texto}</w:t></w:r></w:p></w:body></w:document>"
+    return bytes_zip({"[Content_Types].xml": content_types, "word/document.xml": corpo.encode("utf-8")})
 
 
 PASTAS_VAZIAS = ["Projetos/antigo", "Projetos/vazio_com_sub/sub1/sub2", "Musicas"]

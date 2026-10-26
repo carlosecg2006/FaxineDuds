@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 RAIZ_PROJETO = Path(__file__).resolve().parent.parent
@@ -40,6 +41,15 @@ def pasta_quarentena(arquivo: str | Path, modo_dev: bool = True) -> Path:
     if modo_dev:
         return PASTA_TESTE / NOME_QUARENTENA
     return Path(Path(arquivo).resolve().anchor) / NOME_QUARENTENA
+
+
+# IA local (Fase 4) — ajustada para PC com 4 GB de RAM.
+# Para trocar de modelo: variável de ambiente FAXINEIRO_MODELO ou --modelo nos comandos `ia`.
+MODELO_IA = os.environ.get("FAXINEIRO_MODELO", "qwen2.5:0.5b")
+IA_NUM_CTX = 1024  # janela de contexto pequena = menos memória (o prompt cortado cabe com folga)
+IA_KEEP_ALIVE = "30s"  # o Ollama solta o modelo da memória logo depois de terminar
+IA_FATOR_MEMORIA = 1.2  # o modelo ocupa ~20% a mais que o arquivo dele, carregado
+IA_MARGEM_MEMORIA = 250 * 1024 * 1024  # folga para o Windows e os outros programas
 
 
 # Raio-X (Fase 2): o que conta como arquivo temporário / lixo.

@@ -10,6 +10,7 @@ A única operação que apaga de vez é esvaziar a quarentena (exceção da regr
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -148,6 +149,8 @@ class Quarentena:
                 try:
                     if op["tipo"] == "quarentena":
                         self._concluir_quarentena(op["id"], origem, agora)
+                    elif op["tipo"] == "organizar":
+                        self._concluir_organizar(op["id"], origem, destino, op["pasta_raiz"], agora)
                     else:
                         self._concluir_restaurar(op, destino, agora)
                     mensagens.append(f"Concluída ({op['tipo']}): {origem} → {destino}")
@@ -218,14 +221,15 @@ class Quarentena:
             raise ValueError("Informe item ou lote.")
         plano = Plano("restaurar", f"desfazer {'item ' + str(item) if item else 'lote ' + str(lote)}")
         reservados: set[Path] = set()
-        for op in self.indice.itens_na_quarentena(item=item, lote=lote):
+        for op in self.indice.itens_desfaziveis(item=item, lote=lote):
             na_quarentena, original = Path(op["destino"]), Path(op["origem"])
             passo = Passo(
                 origem=na_quarentena, destino=original, tamanho=op["tamanho"] or 0,
                 hash_esperado=op["hash_completo"], pasta_raiz=op["pasta_raiz"], ref_operacao=op["id"],
             )
             if not na_quarentena.is_file():
-                passo.problema = "não está mais na quarentena"
+                passo.problema = ("não está mais na quarentena" if op["tipo"] == "quarentena"
+                                  else "não está mais onde o organizar deixou")
             elif original.exists() or original in reservados:
                 escolha = conflito(original) if callable(conflito) else conflito
                 if escolha == "renomear":
@@ -239,14 +243,46 @@ class Quarentena:
         return plano
 
     @staticmethod
-    def _nome_livre(original: Path, reservados: set[Path]) -> Path:
+    def _nome_livre(original: Path, reservados: set[Path], palavra: str = "restaurado") -> Path:
         n = 1
         while True:
-            sufixo = " (restaurado)" if n == 1 else f" (restaurado {n})"
+            if palavra:
+                sufixo = f" ({palavra})" if n == 1 else f" ({palavra} {n})"
+            else:
+                sufixo = f" ({n + 1})"
             candidato = original.with_name(f"{original.stem}{sufixo}{original.suffix}")
             if not candidato.exists() and candidato not in reservados:
                 return candidato
             n += 1
+
+    def planejar_organizar(self, movimentos: Iterable[tuple[str | Path, str | Path]],
+                           descricao: str = "organizar") -> Plano:
+        """Mover arquivos para as pastas sugeridas. Nunca sobrescreve: conflito vira 'nome (2).ext'."""
+        plano = Plano("organizar", descricao)
+        reservados: set[Path] = set()
+        for o, d in movimentos:
+            origem, destino = Path(o).resolve(), Path(d).resolve()
+            passo = Passo(origem=origem, destino=destino, tamanho=0)
+            linha = self.indice.buscar(str(origem))
+            if linha is not None:
+                passo.pasta_raiz = linha["pasta_raiz"]
+                passo.hash_esperado = linha["hash_completo"]
+            if not origem.is_file():
+                passo.problema = "arquivo não encontrado"
+            elif not (dentro_da_pasta_teste(origem, self.limite) and dentro_da_pasta_teste(destino, self.limite)):
+                passo.problema = f"fora da área permitida ({self.limite})"
+            elif not self._mesma_unidade(origem, destino):
+                passo.problema = "destino em outra unidade (não copio arquivos)"
+            elif origem == destino:
+                passo.problema = "já está no lugar sugerido"
+            else:
+                passo.tamanho = origem.stat().st_size
+                if destino.exists() or destino in reservados:
+                    passo.destino = self._nome_livre(destino, reservados, palavra="")
+                    passo.renomeado = True
+                reservados.add(passo.destino)
+            plano.passos.append(passo)
+        return plano
 
     def planejar_esvaziar(self) -> Plano:
         """Lista o que seria APAGADO DE VEZ: só itens do histórico que ainda estão na quarentena."""
@@ -268,7 +304,8 @@ class Quarentena:
             return resultado
         resultado.lote_id = self.indice.criar_lote(plano.tipo, plano.descricao, _agora())
         self.indice.confirmar()
-        acao = {"quarentena": self._mover, "restaurar": self._restaurar, "esvaziar": self._apagar}[plano.tipo]
+        acao = {"quarentena": self._mover, "restaurar": self._restaurar, "esvaziar": self._apagar,
+                "organizar": self._organizar}[plano.tipo]
         hashes_mantidos: dict[Path, str] = {}
         for passo in plano.validos:
             try:
@@ -355,10 +392,58 @@ class Quarentena:
             erro = "voltou com hash diferente do original"
         self.indice.concluir_operacao(op["id"], "feita", agora, erro)
         self.indice.mudar_situacao(op["ref_operacao"], "restaurado")
-        pasta_raiz = op["pasta_raiz"] or str(destino.parent)
-        indexar_arquivo(destino, self.indice, pasta_raiz)
+        original = self.indice.operacao(op["ref_operacao"])
+        if original is not None and original["tipo"] == "organizar":
+            # Desfazer um organizar: o arquivo continua no índice, só volta o caminho
+            # (mantém descrição e hashes) e somem as pastas que o organizar criou, se vazias.
+            self.indice.mudar_caminho(op["origem"], str(destino))
+            self._remover_pastas_criadas(original["pastas_criadas"])
+        else:
+            pasta_raiz = op["pasta_raiz"] or str(destino.parent)
+            indexar_arquivo(destino, self.indice, pasta_raiz)
         if erro:
             raise OperacaoRecusada(erro)
+
+    def _organizar(self, passo: Passo, lote_id: int, _: dict[Path, str]) -> None:
+        origem, destino = passo.origem, passo.destino
+        assert destino is not None
+        self._conferir_limite(origem, destino)
+        if not self._mesma_unidade(origem, destino):
+            raise OperacaoRecusada("destino em outra unidade (não copio arquivos)")
+        hash_atual = self.hasher.completo(origem)
+        if passo.hash_esperado and hash_atual != passo.hash_esperado:
+            raise OperacaoRecusada("o arquivo mudou desde a prévia; rode escanear e tente de novo")
+        if destino.exists():
+            raise OperacaoRecusada(f"já existe um arquivo em {destino}; não sobrescrevo")
+
+        criadas = []
+        for pasta in reversed(destino.parents):
+            if dentro_da_pasta_teste(pasta, self.limite) and not pasta.exists():
+                criadas.append(str(pasta))
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        op_id = self.indice.registrar_operacao(
+            lote_id=lote_id, tipo="organizar", origem=str(origem), destino=str(destino),
+            pasta_raiz=passo.pasta_raiz, tamanho=passo.tamanho, hash_completo=hash_atual,
+            ref_operacao=None, agora=_agora(), pastas_criadas=json.dumps(criadas),
+        )
+        self.gancho(ANTES_DE_MEXER, passo)
+        self._no_disco(op_id, lambda: os.rename(origem, destino))
+        self.gancho(DEPOIS_DE_MEXER, passo)
+        self._concluir_organizar(op_id, origem, destino, passo.pasta_raiz, _agora())
+        self.indice.confirmar()
+
+    def _concluir_organizar(self, op_id: int, origem: Path, destino: Path, pasta_raiz: str | None,
+                            agora: str) -> None:
+        self.indice.concluir_operacao(op_id, "feita", agora, situacao="organizado")
+        self.indice.mudar_caminho(str(origem), str(destino), pasta_raiz)
+
+    def _remover_pastas_criadas(self, pastas_json: str | None) -> None:
+        """Remove (se ficaram vazias) só as pastas que o próprio organizar criou."""
+        for pasta in sorted(json.loads(pastas_json or "[]"), key=len, reverse=True):
+            try:
+                os.rmdir(pasta)  # só remove pasta vazia
+            except OSError:
+                pass
 
     def _apagar(self, passo: Passo, lote_id: int, _: dict[Path, str]) -> None:
         caminho = passo.origem
