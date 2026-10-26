@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from pathlib import Path
+
+
+def ha_quanto_tempo(iso: str, hoje: date | None = None) -> str:
+    """'hoje', 'há 1 dia', 'há 12 dias' a partir de uma data ISO."""
+    hoje = hoje or date.today()
+    dias = (hoje - datetime.fromisoformat(iso).date()).days
+    if dias <= 0:
+        return "hoje"
+    return "há 1 dia" if dias == 1 else f"há {dias} dias"
 
 
 def formatar_bytes(n: float) -> str:

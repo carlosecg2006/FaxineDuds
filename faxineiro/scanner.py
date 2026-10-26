@@ -38,6 +38,14 @@ def _iso(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).isoformat(timespec="seconds")
 
 
+# Pastas no Windows (sem LongPathsEnabled) só funcionam até 248 caracteres; arquivos até 260.
+LIMITE_PASTA_WINDOWS = 248
+
+
+def caminho_longo_demais(pasta: Path, erro: OSError) -> bool:
+    return getattr(erro, "winerror", None) == 206 or len(str(pasta)) >= LIMITE_PASTA_WINDOWS
+
+
 def _eh_link(entrada: os.DirEntry) -> bool:
     """Links simbólicos e junções do Windows não são seguidos (evita loops)."""
     if entrada.is_symlink():
@@ -57,7 +65,12 @@ def _percorrer(
                 lista = list(entradas)
         except OSError as erro:
             progresso.erros += 1
-            progresso.avisos.append(f"Pasta inacessível: {pasta} ({erro.strerror})")
+            if caminho_longo_demais(pasta, erro):
+                progresso.avisos.append(
+                    f"Caminho longo demais para o Windows (mais de 260 caracteres), não indexado: {pasta}"
+                )
+            else:
+                progresso.avisos.append(f"Pasta inacessível: {pasta} ({erro.strerror})")
             pastas_com_erro.append(str(pasta))
             continue
 

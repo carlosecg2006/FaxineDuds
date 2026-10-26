@@ -1,5 +1,7 @@
 import os
 import random
+import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -294,6 +296,75 @@ def test_duplicados_nao_move_se_o_mantido_mudou(q, area):
     r = q.executar(plano)
     assert r.feitos == []
     assert all("não é mais igual" in msg for _, msg in r.falhas)
+
+
+# --- arquivo em uso / sem permissão: vira "falhou" e nada muda ------------------------
+
+so_windows = pytest.mark.skipif(sys.platform != "win32", reason="trava de arquivo aberto é do Windows")
+
+
+def _nada_em_andamento_nem_na_quarentena(indice, area):
+    assert indice.operacoes_em_andamento() == []
+    assert [p for p in (area / "_quarentena").rglob("*") if p.is_file()] == []
+
+
+@so_windows
+def test_arquivo_em_uso_vira_falhou(q, area, indice):
+    alvo = area / "Docs" / "contrato.pdf"
+    with open(alvo, "rb"):  # outro programa com o arquivo aberto
+        r = q.executar(q.planejar_mover([alvo]))
+    assert r.feitos == []
+    assert "em uso" in r.falhas[0][1] and "nada mudou" in r.falhas[0][1]
+    assert alvo.exists()
+    assert indice.buscar(str(alvo)) is not None  # continua no índice
+    assert indice.itens_na_quarentena() == []
+    op = indice.con.execute("SELECT * FROM operacoes WHERE tipo = 'quarentena'").fetchone()
+    assert op["estado"] == "falhou" and "em uso" in op["erro"]
+    _nada_em_andamento_nem_na_quarentena(indice, area)
+    # Depois de fechar o arquivo, dá para tentar de novo normalmente.
+    assert len(q.executar(q.planejar_mover([alvo])).feitos) == 1
+
+
+@so_windows
+def test_arquivo_em_uso_no_desfazer(q, area, indice):
+    alvo = area / "Docs" / "contrato.pdf"
+    r = q.executar(q.planejar_mover([alvo]))
+    na_quarentena = r.feitos[0].destino
+    with open(na_quarentena, "rb"):
+        r2 = q.executar(q.planejar_desfazer(lote=r.lote_id))
+    assert r2.feitos == [] and "em uso" in r2.falhas[0][1]
+    assert na_quarentena.exists() and not alvo.exists()
+    assert len(indice.itens_na_quarentena()) == 1
+    assert indice.operacoes_em_andamento() == []
+
+
+def test_sem_permissao_no_esvaziar(q, area, indice):
+    r = q.executar(q.planejar_mover([area / "Docs" / "contrato.pdf"]))
+    na_quarentena = r.feitos[0].destino
+    os.chmod(na_quarentena, stat.S_IREAD)  # somente leitura: o Windows não deixa apagar
+    try:
+        r2 = q.executar(q.planejar_esvaziar())
+        assert r2.feitos == [] and "sem permissão" in r2.falhas[0][1]
+        assert na_quarentena.exists()
+        assert len(indice.itens_na_quarentena()) == 1
+        assert indice.operacoes_em_andamento() == []
+        op = indice.con.execute("SELECT * FROM operacoes WHERE tipo = 'esvaziar'").fetchone()
+        assert op["estado"] == "falhou"
+    finally:
+        os.chmod(na_quarentena, stat.S_IWRITE | stat.S_IREAD)
+
+
+def test_sem_permissao_simulada_ao_mover(q, area, indice, monkeypatch):
+    alvo = area / "Docs" / "contrato.pdf"
+
+    def recusa(*_):
+        raise PermissionError(13, "Acesso negado")
+
+    monkeypatch.setattr("faxineiro.quarentena.os.rename", recusa)
+    r = q.executar(q.planejar_mover([alvo]))
+    assert r.feitos == [] and "sem permissão" in r.falhas[0][1]
+    assert alvo.exists()
+    _nada_em_andamento_nem_na_quarentena(indice, area)
 
 
 # --- esvaziar ----------------------------------------------------------------------

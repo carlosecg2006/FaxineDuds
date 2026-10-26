@@ -70,6 +70,20 @@ class OperacaoRecusada(Exception):
     pass
 
 
+def mensagem_de_erro(erro: Exception) -> str:
+    """Traduz os erros mais comuns do Windows para algo que o usuário entenda."""
+    if isinstance(erro, OSError):
+        codigo = getattr(erro, "winerror", None)
+        if codigo in (32, 33):
+            return "arquivo em uso por outro programa (feche-o e tente de novo); nada mudou"
+        if codigo == 5 or isinstance(erro, PermissionError):
+            return "sem permissão para mexer neste arquivo; nada mudou"
+        if codigo == 206:
+            return "caminho longo demais para o Windows (mais de 260 caracteres); nada mudou"
+        return f"{erro.strerror or erro}; nada mudou"
+    return str(erro)
+
+
 class Quarentena:
     def __init__(
         self,
@@ -261,12 +275,20 @@ class Quarentena:
                 acao(passo, resultado.lote_id, hashes_mantidos)
                 resultado.feitos.append(passo)
             except (OSError, OperacaoRecusada) as erro:
-                mensagem = erro.strerror if isinstance(erro, OSError) and erro.strerror else str(erro)
-                resultado.falhas.append((passo, mensagem))
-        if plano.tipo in ("esvaziar", "restaurar"):
-            self._remover_pastas_vazias()
+                resultado.falhas.append((passo, mensagem_de_erro(erro)))
+        self._remover_pastas_vazias()
         self.indice.confirmar()
         return resultado
+
+    def _no_disco(self, op_id: int, acao: Callable[[], None]) -> None:
+        """Executa a mudança no disco; se o Windows recusar (em uso, sem permissão...),
+        marca a operação como "falhou" na hora — o disco não mudou."""
+        try:
+            acao()
+        except OSError as erro:
+            self.indice.concluir_operacao(op_id, "falhou", _agora(), mensagem_de_erro(erro))
+            self.indice.confirmar()
+            raise
 
     def _mover(self, passo: Passo, lote_id: int, hashes_mantidos: dict[Path, str]) -> None:
         origem = passo.origem
@@ -297,7 +319,7 @@ class Quarentena:
             ref_operacao=None, agora=_agora(),
         )
         self.gancho(ANTES_DE_MEXER, passo)
-        os.rename(origem, destino)  # mesma unidade: instantâneo, não copia
+        self._no_disco(op_id, lambda: os.rename(origem, destino))  # mesma unidade: instantâneo, não copia
         self.gancho(DEPOIS_DE_MEXER, passo)
         self._concluir_quarentena(op_id, origem, _agora())
         self.indice.confirmar()
@@ -322,7 +344,7 @@ class Quarentena:
             ref_operacao=passo.ref_operacao, agora=_agora(),
         )
         self.gancho(ANTES_DE_MEXER, passo)
-        os.rename(origem, destino)
+        self._no_disco(op_id, lambda: os.rename(origem, destino))
         self.gancho(DEPOIS_DE_MEXER, passo)
         self._concluir_restaurar(self.indice.operacao(op_id), destino, _agora())
         self.indice.confirmar()
@@ -349,7 +371,7 @@ class Quarentena:
             ref_operacao=passo.ref_operacao, agora=_agora(),
         )
         self.gancho(ANTES_DE_MEXER, passo)
-        os.remove(caminho)  # única remoção definitiva do app (regra 1, exceção do Esvaziar)
+        self._no_disco(op_id, lambda: os.remove(caminho))  # única remoção definitiva (exceção do Esvaziar)
         self.gancho(DEPOIS_DE_MEXER, passo)
         self._concluir_esvaziar(op_id, passo.ref_operacao, _agora())
         self.indice.confirmar()

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .config import CAMINHO_INDICE, PASTA_TESTE, dentro_da_pasta_teste
-from .formato import formatar_bytes, relativo
+from .formato import formatar_bytes, ha_quanto_tempo, relativo
 from .indice import Indice
 from .quarentena import Plano, Quarentena, Resultado
 
@@ -118,12 +118,18 @@ def cmd_listar(args: argparse.Namespace) -> int:
         if not itens:
             print("A quarentena está vazia.")
             return 0
-        print(f"{'item':>5} {'lote':>5}  {'tamanho':>10}  {'quando':<19}  de onde veio")
+        print(f"{'item':>5} {'lote':>5}  {'tamanho':>10}  {'desde':<12}  de onde veio")
         for op in itens:
             print(f"{op['id']:>5} {op['lote_id']:>5}  {formatar_bytes(op['tamanho'] or 0):>10}  "
-                  f"{op['concluido_em']:<19}  {relativo(op['origem'], PASTA_TESTE)}")
+                  f"{ha_quanto_tempo(op['concluido_em']):<12}  {relativo(op['origem'], PASTA_TESTE)}")
+        print()
+        print("Por lote:")
+        for lote in indice.lotes_na_quarentena():
+            print(f"  Lote {lote['lote_id']}: {lote['quantidade']} arquivo(s), "
+                  f"{formatar_bytes(lote['bytes'] or 0)}, na quarentena {ha_quanto_tempo(lote['desde'])} "
+                  f"(desde {lote['desde'][:10]})")
         total = sum(op["tamanho"] or 0 for op in itens)
-        print(f"Total: {len(itens)} arquivo(s), {formatar_bytes(total)}")
+        print(f"Espaço total ocupado pela quarentena: {formatar_bytes(total)} em {len(itens)} arquivo(s)")
         return 0
     finally:
         indice.fechar()

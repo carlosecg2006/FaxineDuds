@@ -1,8 +1,11 @@
 """Comandos da quarentena pela linha de comando (com a pasta_teste apontada para tmp_path)."""
 
+from datetime import date, datetime, timedelta
+
 import pytest
 
 from faxineiro import cli_quarentena, config
+from faxineiro.formato import ha_quanto_tempo
 from faxineiro.__main__ import main
 from faxineiro.indice import Indice
 from faxineiro.scanner import escanear
@@ -59,6 +62,23 @@ def test_mover_listar_desfazer(ambiente, monkeypatch, capsys):
     assert alvo.exists()
 
 
+def test_listar_mostra_espaco_total_e_dias_por_lote(ambiente, capsys):
+    area, banco = ambiente
+    main(["quarentena", "mover", str(area / "Docs" / "b.txt"), "--sim", "--indice", str(banco)])
+    main(["quarentena", "mover", str(area / "Docs" / "a.txt"), "--sim", "--indice", str(banco)])
+    dez_dias_atras = (datetime.now() - timedelta(days=10)).isoformat(timespec="seconds")
+    with Indice(banco) as i:  # finge que o lote 1 entrou há 10 dias
+        i.con.execute("UPDATE operacoes SET concluido_em = ? WHERE lote_id = 1", (dez_dias_atras,))
+        i.confirmar()
+    capsys.readouterr()
+    main(["quarentena", "listar", "--indice", str(banco)])
+    saida = capsys.readouterr().out
+    tamanho = len("conteúdo B".encode()) + len("conteúdo A".encode())
+    assert "Lote 1: 1 arquivo(s)" in saida and "há 10 dias" in saida
+    assert "Lote 2: 1 arquivo(s)" in saida and "hoje" in saida
+    assert f"Espaço total ocupado pela quarentena: {tamanho} B em 2 arquivo(s)" in saida
+
+
 def test_duplicados_pela_cli(ambiente, monkeypatch):
     area, banco = ambiente
     _respostas(monkeypatch, "s")
@@ -104,6 +124,13 @@ def test_desfazer_conflito_pergunta(ambiente, monkeypatch):
     main(["quarentena", "desfazer", "--lote", "1", "--indice", str(banco)])
     assert alvo.read_text(encoding="utf-8") == "outro"
     assert (area / "Docs" / "b (restaurado).txt").exists()
+
+
+def test_ha_quanto_tempo():
+    hoje = date(2026, 10, 26)
+    assert ha_quanto_tempo("2026-10-26T09:00:00", hoje) == "hoje"
+    assert ha_quanto_tempo("2026-10-25T23:59:00", hoje) == "há 1 dia"
+    assert ha_quanto_tempo("2026-09-26T10:00:00", hoje) == "há 30 dias"
 
 
 def test_sem_teclado_conta_como_nao(ambiente, monkeypatch, capsys):

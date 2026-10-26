@@ -338,6 +338,15 @@ class Indice:
             args.append(lote)
         return self.con.execute(sql + " ORDER BY id", args).fetchall()
 
+    def lotes_na_quarentena(self) -> list[sqlite3.Row]:
+        """Resumo por lote do que ainda está na quarentena: quantidade, bytes e desde quando."""
+        return self.con.execute(
+            """SELECT lote_id, COUNT(*) AS quantidade, SUM(tamanho) AS bytes,
+                      MIN(concluido_em) AS desde
+               FROM operacoes WHERE tipo = 'quarentena' AND situacao = 'na_quarentena'
+               GROUP BY lote_id ORDER BY lote_id"""
+        ).fetchall()
+
     def tamanho_em_disco(self) -> int:
         """Bytes ocupados pelo índice (arquivo principal + WAL + SHM)."""
         total = 0

@@ -81,7 +81,7 @@ bloqueio não pegaria:
 | 5 | Interface | App gráfico em PySide6 |
 | 5B | Conversor de arquivos | Ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
-| 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador |
+| 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador (ver pendências abaixo) |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -96,6 +96,18 @@ bloqueio não pegaria:
   fluxo de áudio), para ser quase instantâneo.
 - Barra de progresso nas conversões longas.
 - O arquivo convertido entra no índice automaticamente.
+
+### Fase 7 — pendências já conhecidas
+- **Caminhos com mais de 260 caracteres.** Neste PC o Windows está com
+  `LongPathsEnabled = 0` (registro `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`).
+  Testado em 26/10/2026: o scanner não trava, mas **não indexa** pastas com
+  mais de ~248 caracteres e só avisa "Caminho longo demais..."
+  (`scanner.caminho_longo_demais`). Na quarentena, a falha vira "falhou" e
+  nada muda. Resolver na Fase 7: usar o prefixo `\\?\` nos caminhos absolutos
+  (scanner, hashes, quarentena) ou orientar a ativar `LongPathsEnabled`;
+  o teste `test_caminho_maior_que_260_nao_trava` já cria esse cenário.
+- Trocar a quarentena do modo dev (`pasta_teste\_quarentena`) para
+  `<unidade>:\_quarentena` (`config.pasta_quarentena(modo_dev=False)`).
 
 ### Fase 8 — Arquivo Morto na nuvem
 - O usuário escolhe arquivos e clica em "Arquivar".
@@ -156,5 +168,7 @@ bloqueio não pegaria:
   Quarentena em `pasta_teste\_quarentena` no modo dev (`config.pasta_quarentena`),
   caminho relativo dentro do lote (evita o limite de 260 caracteres).
   CLI: `python -m faxineiro quarentena mover|duplicados|listar|desfazer|esvaziar`.
-  88 testes.
+  Arquivo em uso / sem permissão vira "falhou" na hora, sem mudar nada
+  (`mensagem_de_erro` traduz os erros do Windows). `listar` mostra o espaço
+  total e há quantos dias cada lote está lá. 95 testes.
 - Próxima: Fase 4 — IA local (Ollama).
