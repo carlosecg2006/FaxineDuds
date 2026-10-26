@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-import io
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # testes da interface sem abrir janela
+
+import io  # noqa: E402
 import struct
 import zipfile
 import zlib

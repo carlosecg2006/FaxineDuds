@@ -67,6 +67,7 @@ class Resultado:
     lote_id: int | None = None
     feitos: list[Passo] = field(default_factory=list)
     falhas: list[tuple[Passo, str]] = field(default_factory=list)
+    cancelado: bool = False
 
 
 class OperacaoRecusada(Exception):
@@ -340,9 +341,19 @@ class Quarentena:
 
     # --- executar --------------------------------------------------------------
 
-    def executar(self, plano: Plano, *, lote_id: int | None = None) -> Resultado:
+    def executar(
+        self,
+        plano: Plano,
+        *,
+        lote_id: int | None = None,
+        parar: Callable[[], bool] = lambda: False,
+        ao_progredir: Callable[[int, int], None] | None = None,
+    ) -> Resultado:
         """Executa o plano. `lote_id` junta este plano a um lote já existente (ex.: remover as
-        pastas que o organizar esvaziou entra no MESMO lote, e um único desfazer volta tudo)."""
+        pastas que o organizar esvaziou entra no MESMO lote, e um único desfazer volta tudo).
+
+        `parar()` é consultado entre um arquivo e outro (nunca no meio de um rename);
+        `ao_progredir(feitos, total)` alimenta a barra de progresso da interface."""
         resultado = Resultado()
         if not plano.validos:
             return resultado
@@ -351,12 +362,18 @@ class Quarentena:
         acao = {"quarentena": self._mover, "restaurar": self._restaurar, "esvaziar": self._apagar,
                 "organizar": self._organizar, "remover_pasta": self._remover_pasta}[plano.tipo]
         hashes_mantidos: dict[Path, str] = {}
-        for passo in plano.validos:
+        validos = plano.validos
+        for i, passo in enumerate(validos):
+            if parar():
+                resultado.cancelado = True
+                break
             try:
                 acao(passo, resultado.lote_id, hashes_mantidos)
                 resultado.feitos.append(passo)
             except (OSError, OperacaoRecusada) as erro:
                 resultado.falhas.append((passo, mensagem_de_erro(erro)))
+            if ao_progredir:
+                ao_progredir(i + 1, len(validos))
         if plano.tipo == "restaurar":
             # Uma pasta criada pelo organizar (ex.: "Textos") só fica vazia depois que TODOS os
             # arquivos do lote voltam; por isso a limpeza final vai da pasta mais funda para a mais rasa.

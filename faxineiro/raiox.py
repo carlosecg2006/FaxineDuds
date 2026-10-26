@@ -54,6 +54,7 @@ class ResultadoDuplicados:
     grupos: list[GrupoDuplicado] = field(default_factory=list)
     desatualizados: list[str] = field(default_factory=list)
     erros: list[str] = field(default_factory=list)
+    cancelado: bool = False
 
     @property
     def recuperavel(self) -> int:
@@ -80,6 +81,7 @@ def encontrar_duplicados(
     *,
     hasher: Hasher | None = None,
     ao_progredir: Callable[[ProgressoHash], None] | None = None,
+    parar: Callable[[], bool] = lambda: False,
 ) -> ResultadoDuplicados:
     """Duplicados exatos em 3 etapas: tamanho → hash parcial → hash completo.
 
@@ -107,8 +109,18 @@ def encontrar_duplicados(
         if ao_progredir:
             ao_progredir(progresso)
 
+    def cancelar() -> ResultadoDuplicados:
+        """Cancelado: guarda os hashes já feitos (a próxima vez é mais rápida) e não mostra grupos pela metade."""
+        indice.confirmar()
+        resultado.cancelado = True
+        progresso.terminou = True
+        avisar()
+        return resultado
+
     # Etapa 2: hash parcial (começo do arquivo).
     for linha in candidatos:
+        if parar():
+            return cancelar()
         parcial, completo = linha["hash_parcial"], linha["hash_completo"]
         try:
             if parcial is None:
@@ -139,6 +151,8 @@ def encontrar_duplicados(
         for linha in grupo:
             completo = completos.get(linha["id"])
             if completo is None:
+                if parar():
+                    return cancelar()
                 try:
                     completo = hasher.completo(linha["caminho"])
                 except OSError as erro:

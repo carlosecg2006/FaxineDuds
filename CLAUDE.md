@@ -22,7 +22,8 @@ um conceito por vez, sem enrolação.
    AppData e pastas de programas. Lista de bloqueio configurável.
 4. O índice não copia arquivos: guarda só os dados (SQLite) com caminho,
    tamanho, datas, hash, tipo e descrição da IA. Exceções: miniaturas
-   pequenas de imagens (Fases 8 e 9), envios ao Arquivo Morto (Fase 8)
+   pequenas de imagens (96 px, cache em `dados/miniaturas/`; desde a Fase 5,
+   a pedido do Carlos), envios ao Arquivo Morto (Fase 8)
    e cópias que o usuário pedir explicitamente (Fase 9), sempre
    verificadas por hash.
 5. Durante o desenvolvimento, testar SÓ em `D:\FaxineDuds\pasta_teste`.
@@ -70,7 +71,7 @@ bloqueio não pegaria:
   O 3b não cabe neste PC (1,9 GB; travou em teste de 26/10/2026).
 
 ## Tecnologia
-- Python 3.11+, interface PySide6 (Qt)
+- Python 3.11+ (no PC: 3.14), interface `PySide6-Essentials` (só QtCore/QtGui/QtWidgets, mais leve)
 - SQLite para o índice
 - Hash BLAKE3 para duplicados (tamanho → hash parcial → hash completo)
 - Ollama local: modelo configurável (`config.MODELO_IA`, padrão `qwen2.5:0.5b`;
@@ -88,7 +89,7 @@ bloqueio não pegaria:
 | 2 | Raio-X | Concluída — duplicados, arquivos pesados e lixo |
 | 3 | Quarentena e desfazer | Concluída — mover para `_quarentena` com diário de operações (ideia do fo-core) |
 | 4 | IA local | Concluída — descrever e classificar arquivos com Ollama; modo sem IA |
-| 5 | Interface | App gráfico em PySide6 |
+| 5 | Interface | Concluída — app gráfico em PySide6 |
 | 5B | Conversor de arquivos | Ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador (ver pendências abaixo) |
@@ -210,4 +211,20 @@ bloqueio não pegaria:
   Sobra da demo: `Imagens`, `Outros`, `Textos` e `Documentos\2026`,
   `Documentos\Boleto digital` vazias na pasta_teste; o `rmdir` foi bloqueado
   pelo settings.json, então o Carlos remove à mão.
-- Próxima: Fase 5 — Interface PySide6.
+- Fase 5 — concluída. `faxineiro/gui/`: `app.py` (janela, barra lateral, tema
+  claro/escuro em QSettings, barra de progresso + Cancelar, `recuperar_diario`
+  ao abrir), `tarefas.py` (QThread, uma tarefa por vez, prioridade baixa; o
+  aviso de fim só sai com a thread parada; cada tarefa abre a própria conexão
+  SQLite), `modelos.py` (tabela que busca 200 linhas por vez com `fetchMore`),
+  `miniaturas.py` (96 px via `QImageReader.setScaledSize`, cache em disco e
+  QPixmapCache de 10 MB), `mapa.py` + `treemap.py` (mapa de blocos
+  "squarified"), `dialogos.py` (prévia com protegidos, confirmação dupla) e
+  `telas/` (Início, Explorador, Faxina, Organizar, Quarentena, IA). Novos
+  parâmetros opcionais `parar` em `escanear`, `encontrar_duplicados` e
+  `Quarentena.executar` (cancelar entre arquivos; scanner cancelado não remove
+  nada do índice). Consultas paginadas no índice (`arquivos_da_pasta`,
+  `subpastas`, `tamanho_por_pasta`, `buscar_texto`). Abrir: `Abrir Faxineiro.bat`
+  ou `python -m faxineiro gui`. Capturas: `ferramentas/capturas_gui.py` →
+  `docs/capturas/`. Janela aberta: 82 MB de RAM (40 MB privados). 262 testes
+  (os de interface rodam com `QT_QPA_PLATFORM=offscreen`, sem abrir janela).
+- Próxima: Fase 5B — Conversor de arquivos.

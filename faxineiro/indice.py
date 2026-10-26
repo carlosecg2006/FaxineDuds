@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -135,8 +136,12 @@ class Indice:
             self.con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def fechar(self) -> None:
+        """Pode ser chamado mais de uma vez (a janela e quem a criou podem fechar)."""
+        if getattr(self, "_fechado", False):
+            return
         self.checkpoint()
         self.con.close()
+        self._fechado = True
 
     def __enter__(self) -> Indice:
         return self
@@ -406,6 +411,73 @@ class Indice:
                WHERE caminho = ?""",
             (novo, nome, pasta_raiz, antigo),
         )
+
+    # --- interface (Fase 5): consultas em páginas, nunca a lista inteira ------------
+
+    @staticmethod
+    def _prefixo(pasta: str | Path) -> str:
+        return str(pasta).rstrip("\\/") + os.sep
+
+    def arquivos_da_pasta(self, pasta: str | Path, limite: int = 200, offset: int = 0,
+                          ordem: str = "nome") -> list[sqlite3.Row]:
+        """Arquivos que estão DIRETO na pasta (sem subpastas), em páginas."""
+        prefixo = self._prefixo(pasta)
+        coluna = {"nome": "nome COLLATE NOCASE", "tamanho": "tamanho DESC", "data": "modificado_em DESC"}[ordem]
+        return self.con.execute(
+            f"""SELECT * FROM arquivos
+                WHERE substr(caminho, 1, ?) = ? AND instr(substr(caminho, ? + 1), ?) = 0
+                ORDER BY {coluna} LIMIT ? OFFSET ?""",
+            (len(prefixo), prefixo, len(prefixo), os.sep, limite, offset),
+        ).fetchall()
+
+    def subpastas(self, pasta: str | Path) -> list[sqlite3.Row]:
+        """Subpastas diretas que têm arquivos no índice: nome, quantidade e bytes (de tudo dentro)."""
+        prefixo = self._prefixo(pasta)
+        return self.con.execute(
+            """WITH resto AS (
+                   SELECT substr(caminho, ? + 1) AS r, tamanho FROM arquivos WHERE substr(caminho, 1, ?) = ?
+               )
+               SELECT substr(r, 1, instr(r, ?) - 1) AS nome, COUNT(*) AS quantidade, SUM(tamanho) AS bytes
+               FROM resto WHERE instr(r, ?) > 0
+               GROUP BY nome ORDER BY nome COLLATE NOCASE""",
+            (len(prefixo), len(prefixo), prefixo, os.sep, os.sep),
+        ).fetchall()
+
+    def tamanho_por_pasta(self, pasta: str | Path) -> list[dict]:
+        """Para o mapa de blocos: cada subpasta (e os arquivos soltos) com bytes e a categoria que mais pesa."""
+        prefixo = self._prefixo(pasta)
+        linhas = self.con.execute(
+            """WITH resto AS (
+                   SELECT substr(caminho, ? + 1) AS r, tamanho, categoria
+                   FROM arquivos WHERE substr(caminho, 1, ?) = ?
+               )
+               SELECT CASE WHEN instr(r, ?) > 0 THEN substr(r, 1, instr(r, ?) - 1) ELSE '' END AS nome,
+                      categoria, SUM(tamanho) AS bytes, COUNT(*) AS quantidade
+               FROM resto GROUP BY nome, categoria""",
+            (len(prefixo), len(prefixo), prefixo, os.sep, os.sep),
+        ).fetchall()
+        blocos: dict[str, dict] = {}
+        for l in linhas:
+            b = blocos.setdefault(l["nome"], {"nome": l["nome"] or "(arquivos soltos)", "pasta": bool(l["nome"]),
+                                              "bytes": 0, "quantidade": 0, "categorias": {}})
+            b["bytes"] += l["bytes"] or 0
+            b["quantidade"] += l["quantidade"]
+            b["categorias"][l["categoria"]] = (l["bytes"] or 0)
+        for b in blocos.values():
+            b["categoria"] = max(b["categorias"], key=b["categorias"].get) if b["categorias"] else "outro"
+        return sorted(blocos.values(), key=lambda b: b["bytes"], reverse=True)
+
+    def buscar_texto(self, pasta: str | Path, termo: str, limite: int = 200, offset: int = 0) -> list[sqlite3.Row]:
+        """Busca por nome OU descrição (em qualquer subpasta), em páginas."""
+        prefixo = self._prefixo(pasta)
+        padrao = "%" + termo.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+        return self.con.execute(
+            """SELECT * FROM arquivos
+               WHERE substr(caminho, 1, ?) = ?
+                 AND (nome LIKE ? ESCAPE '!' OR descricao LIKE ? ESCAPE '!')
+               ORDER BY nome COLLATE NOCASE LIMIT ? OFFSET ?""",
+            (len(prefixo), prefixo, padrao, padrao, limite, offset),
+        ).fetchall()
 
     def lotes_na_quarentena(self) -> list[sqlite3.Row]:
         """Resumo por lote do que ainda está na quarentena: quantidade, bytes e desde quando."""

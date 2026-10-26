@@ -160,6 +160,16 @@ def cmd_raiox(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    try:
+        from .gui.app import principal
+    except ImportError:
+        print("A interface precisa do PySide6: .venv\\Scripts\\python -m pip install PySide6-Essentials",
+              file=sys.stderr)
+        return 1
+    return principal()
+
+
 def _saida_em_utf8() -> None:
     """No Windows, saída redirecionada (arquivo/pipe) usa cp1252 e quebra com "→" e "…"."""
     for fluxo in (sys.stdout, sys.stderr):
@@ -189,6 +199,9 @@ def main(argv: list[str] | None = None) -> int:
 
     cli_quarentena.registrar(sub)
     cli_ia.registrar(sub)
+
+    g = sub.add_parser("gui", help="abre a janela do Faxineiro")
+    g.set_defaults(func=cmd_gui)
 
     args = parser.parse_args(argv)
     return args.func(args)

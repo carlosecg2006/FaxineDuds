@@ -28,6 +28,7 @@ class Progresso:
     pastas_ignoradas: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
     terminou: bool = False
+    cancelado: bool = False
 
 
 def _agora() -> str:
@@ -140,8 +141,11 @@ def escanear(
     bloqueios: Bloqueios | None = None,
     ao_progredir: Callable[[Progresso], None] | None = None,
     detector: Callable[[Path], TipoDetectado] = detectar_tipo,
+    parar: Callable[[], bool] = lambda: False,
 ) -> Progresso:
-    """Varre `pasta` e atualiza o índice. Nunca altera os arquivos do usuário."""
+    """Varre `pasta` e atualiza o índice. Nunca altera os arquivos do usuário.
+
+    `parar()` é consultado entre um arquivo e outro (botão Cancelar da interface)."""
     raiz = Path(pasta).resolve()
     if not raiz.is_dir():
         raise NotADirectoryError(f"Pasta não encontrada: {raiz}")
@@ -159,6 +163,9 @@ def escanear(
             ao_progredir(progresso)
 
     for entrada, st in _percorrer(raiz, bloqueios, progresso, pastas_com_erro):
+        if parar():
+            progresso.cancelado = True
+            break
         progresso.varridos += 1
         caminho = entrada.path
         assinatura = (st.st_size, st.st_mtime_ns)
@@ -193,7 +200,11 @@ def escanear(
         prefixos = tuple(p.rstrip("\\/") + os.sep for p in pastas_com_erro)
         iguais_pendentes.extend(c for c in anteriores if c.startswith(prefixos))
     indice.marcar_visto(iguais_pendentes, varredura_id)
-    progresso.removidos = indice.remover_nao_vistos(pasta_raiz, varredura_id)
+    if progresso.cancelado:
+        # Cancelada no meio: o que não foi visto NÃO sumiu, só não deu tempo de olhar. Não remove nada.
+        indice.confirmar()
+    else:
+        progresso.removidos = indice.remover_nao_vistos(pasta_raiz, varredura_id)
     indice.finalizar_varredura(
         varredura_id,
         _agora(),

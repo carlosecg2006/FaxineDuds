@@ -1,0 +1,197 @@
+"""Faxina: duplicados, pesados e lixo do Raio-X, com caixas de seleção e "Mandar para quarentena"."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDoubleSpinBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ... import raiox
+from ...config import MB, PESADO_MINIMO, PESADO_MINIMO_TESTE
+from ...formato import formatar_bytes, relativo
+from ..dialogos import confirmar_previa, rotulo_flexivel
+
+CAMINHO = Qt.ItemDataRole.UserRole
+MANTER = Qt.ItemDataRole.UserRole + 1  # duplicados: a cópia que fica
+HASH = Qt.ItemDataRole.UserRole + 2
+
+
+def _arvore(colunas: list[str]) -> QTreeWidget:
+    a = QTreeWidget()
+    a.setHeaderLabels(colunas)
+    a.setColumnWidth(0, 460)
+    return a
+
+
+def _item_marcavel(pai, textos: list[str], caminho: str, marcado: bool = False) -> QTreeWidgetItem:
+    item = QTreeWidgetItem(pai, textos)
+    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+    item.setCheckState(0, Qt.CheckState.Checked if marcado else Qt.CheckState.Unchecked)
+    item.setData(0, CAMINHO, caminho)
+    return item
+
+
+class TelaFaxina(QWidget):
+    def __init__(self, amb) -> None:
+        super().__init__()
+        self.amb = amb
+        layout = QVBoxLayout(self)
+
+        topo = QHBoxLayout()
+        self.botao_analisar = QPushButton("Analisar")
+        self.botao_analisar.setToolTip("Roda o Raio-X: acha duplicados (hash BLAKE3), pesados e lixo")
+        self.botao_analisar.clicked.connect(self.analisar)
+        topo.addWidget(self.botao_analisar)
+        topo.addWidget(QLabel("Pesados a partir de"))
+        self.minimo = QDoubleSpinBox(suffix=" MB", decimals=1, maximum=1_000_000)
+        self.minimo.setValue(PESADO_MINIMO / MB)
+        topo.addWidget(self.minimo)
+        self.modo_teste = QCheckBox("modo teste (1 MB)")
+        self.modo_teste.toggled.connect(
+            lambda v: self.minimo.setValue((PESADO_MINIMO_TESTE if v else PESADO_MINIMO) / MB))
+        topo.addWidget(self.modo_teste)
+        topo.addStretch(1)
+        layout.addLayout(topo)
+        self.resumo = rotulo_flexivel("Clique em Analisar.")
+        layout.addWidget(self.resumo)
+
+        self.abas = QTabWidget()
+        self.duplicados = _arvore(["Arquivo", "Tamanho", "Observação"])
+        self.pesados = _arvore(["Arquivo", "Tamanho", "Tipo"])
+        self.lixo = _arvore(["Arquivo", "Tamanho", "Por quê"])
+        self.abas.addTab(self.duplicados, "Duplicados")
+        self.abas.addTab(self.pesados, "Pesados")
+        self.abas.addTab(self.lixo, "Lixo")
+        layout.addWidget(self.abas, 1)
+
+        baixo = QHBoxLayout()
+        marcar = QPushButton("Marcar todas as cópias")
+        marcar.setToolTip("Nos duplicados, marca todas as cópias menos a que fica")
+        marcar.clicked.connect(self.marcar_copias)
+        baixo.addWidget(marcar)
+        baixo.addStretch(1)
+        self.botao_quarentena = QPushButton("Mandar para quarentena")
+        self.botao_quarentena.clicked.connect(self.mandar_para_quarentena)
+        baixo.addWidget(self.botao_quarentena)
+        layout.addLayout(baixo)
+
+    # --- análise (em segundo plano) -------------------------------------------------
+
+    def analisar(self) -> None:
+        pasta, minimo = self.amb.pasta, int(self.minimo.value() * MB)
+
+        def trabalho(ctx):
+            with self.amb.abrir_indice() as indice:
+                dup = raiox.encontrar_duplicados(
+                    indice, pasta, parar=ctx.parar,
+                    ao_progredir=lambda p: ctx.avisar(p.feitos, p.total, f"Calculando hashes: {p.feitos}/{p.total}"))
+                return {"dup": dup, "pesados": raiox.pesados(indice, pasta, 200, minimo),
+                        "lixo": raiox.lixo(indice, pasta), "vazias": raiox.pastas_vazias(pasta)}
+
+        self.amb.rodar("Analisando (Raio-X)", trabalho, self._mostrar)
+
+    def _mostrar(self, r: dict) -> None:
+        base = self.amb.pasta
+        dup = r["dup"]
+        self.duplicados.clear()
+        for n, g in enumerate(dup.grupos, 1):
+            grupo = QTreeWidgetItem(self.duplicados, [f"Grupo {n}: {len(g.arquivos)} cópias",
+                                                      f"libera {formatar_bytes(g.recuperavel)}", g.motivo])
+            for a in g.arquivos:
+                if a["id"] == g.manter["id"]:
+                    fica = QTreeWidgetItem(grupo, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]),
+                                                   "FICA (sugerido: o mais antigo)"])
+                    fica.setFlags(fica.flags() & ~Qt.ItemFlag.ItemIsEnabled)  # nunca dá para marcar
+                    continue
+                item = _item_marcavel(grupo, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]), "cópia"],
+                                      a["caminho"])
+                item.setData(0, MANTER, g.manter["caminho"])
+                item.setData(0, HASH, g.hash_completo)
+            grupo.setExpanded(True)
+        self.pesados.clear()
+        for a in r["pesados"]:
+            _item_marcavel(self.pesados, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]),
+                                          f"{a['tipo_real']} ({a['categoria']})"], a["caminho"])
+        self.lixo.clear()
+        lx = r["lixo"]
+        for a in lx.temporarios:
+            _item_marcavel(self.lixo, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]), "temporário"],
+                           a["caminho"])
+        for a in lx.vazios:
+            _item_marcavel(self.lixo, [relativo(a["caminho"], base), "0 B", "arquivo vazio"], a["caminho"])
+        for p in r["vazias"]:
+            QTreeWidgetItem(self.lixo, [relativo(p, base) + "\\", "", "pasta vazia (só aviso)"])
+        cancelado = " (cancelado: rode de novo para terminar)" if dup.cancelado else ""
+        self.resumo.setText(f"Dá para liberar {formatar_bytes(dup.recuperavel + lx.recuperavel)}: "
+                            f"{len(dup.grupos)} grupos de duplicados, {len(lx.temporarios)} temporários{cancelado}")
+
+    def ao_mostrar(self) -> None:
+        pass
+
+    # --- ação --------------------------------------------------------------------
+
+    def marcar_copias(self) -> None:
+        for i in range(self.duplicados.topLevelItemCount()):
+            grupo = self.duplicados.topLevelItem(i)
+            for j in range(grupo.childCount()):
+                item = grupo.child(j)
+                if item.data(0, CAMINHO):
+                    item.setCheckState(0, Qt.CheckState.Checked)
+
+    def marcados(self) -> list[QTreeWidgetItem]:
+        arvore = self.abas.currentWidget()
+        itens = []
+
+        def visitar(item: QTreeWidgetItem) -> None:
+            if item.data(0, CAMINHO) and item.checkState(0) == Qt.CheckState.Checked:
+                itens.append(item)
+            for k in range(item.childCount()):
+                visitar(item.child(k))
+
+        for i in range(arvore.topLevelItemCount()):
+            visitar(arvore.topLevelItem(i))
+        return itens
+
+    def montar_plano(self):
+        """Prévia com o executor da Fase 3. Nos duplicados, a cópia que fica é conferida na hora de mover."""
+        itens = self.marcados()
+        q = self.amb.quarentena(self.amb.leitura)
+        plano = q.planejar_mover([i.data(0, CAMINHO) for i in itens], "faxina pela interface")
+        extra = {Path(i.data(0, CAMINHO)).resolve(): (i.data(0, MANTER), i.data(0, HASH)) for i in itens}
+        for passo in plano.passos:
+            manter, hash_ = extra.get(passo.origem, (None, None))
+            if manter:
+                passo.manter, passo.hash_esperado = Path(manter), hash_
+        return plano
+
+    def mandar_para_quarentena(self) -> None:
+        plano = self.montar_plano()
+        if not plano.passos:
+            self.amb.mensagem("Marque pelo menos um arquivo.")
+            return
+        if not confirmar_previa(plano, self.amb.pasta, "mandar para a quarentena", self):
+            return
+
+        def trabalho(ctx):
+            with self.amb.abrir_indice() as indice:
+                return self.amb.quarentena(indice).executar(
+                    plano, parar=ctx.parar, ao_progredir=lambda f, t: ctx.avisar(f, t, f"Movendo {f}/{t}"))
+
+        def pronto(r) -> None:
+            falhas = f", {len(r.falhas)} com problema" if r.falhas else ""
+            self.amb.mensagem(f"Lote {r.lote_id}: {len(r.feitos)} na quarentena{falhas}. Dá para desfazer na tela Quarentena.")
+            self.analisar()
+
+        self.amb.rodar("Mandando para a quarentena", trabalho, pronto)
