@@ -43,6 +43,7 @@ class Passo:
     manter: Path | None = None  # duplicados: a cópia que fica (precisa existir e ser igual)
     problema: str | None = None  # se preenchido, o passo não será executado
     renomeado: bool = False  # restaurar com outro nome por causa de conflito
+    recriar_pasta: bool = False  # desfazer de "remover_pasta": só recria a pasta vazia
 
 
 @dataclass
@@ -139,7 +140,19 @@ class Quarentena:
             tem_origem, tem_destino = origem.exists(), destino.exists()
             agora = _agora()
 
-            if op["tipo"] == "esvaziar":
+            if op["tipo"] in ("remover_pasta", "recriar_pasta"):
+                alvo = origem if op["tipo"] == "remover_pasta" else destino
+                pronto = not alvo.exists() if op["tipo"] == "remover_pasta" else alvo.is_dir()
+                if pronto:
+                    self.indice.concluir_operacao(op["id"], "feita", agora,
+                                                  situacao="removida" if op["tipo"] == "remover_pasta" else None)
+                    if op["tipo"] == "recriar_pasta" and op["ref_operacao"]:
+                        self.indice.mudar_situacao(op["ref_operacao"], "restaurado")
+                    mensagens.append(f"Concluída ({op['tipo']}): {alvo}")
+                else:
+                    self.indice.concluir_operacao(op["id"], "falhou", agora, "interrompida; nada mudou")
+                    mensagens.append(f"Interrompida, nada mudou: {alvo}")
+            elif op["tipo"] == "esvaziar":
                 if not tem_origem:
                     self._concluir_esvaziar(op["id"], op["ref_operacao"], agora)
                     mensagens.append(f"Concluída (esvaziar): {origem}")
@@ -222,7 +235,14 @@ class Quarentena:
             raise ValueError("Informe item ou lote.")
         plano = Plano("restaurar", f"desfazer {'item ' + str(item) if item else 'lote ' + str(lote)}")
         reservados: set[Path] = set()
-        for op in self.indice.itens_desfaziveis(item=item, lote=lote):
+        ops = self.indice.itens_desfaziveis(item=item, lote=lote)
+        # Pastas removidas voltam primeiro, para os arquivos terem onde cair.
+        for op in sorted(ops, key=lambda o: o["tipo"] != "remover_pasta"):
+            if op["tipo"] == "remover_pasta":
+                pasta = Path(op["origem"])
+                plano.passos.append(Passo(origem=pasta, destino=pasta, tamanho=0, ref_operacao=op["id"],
+                                          recriar_pasta=True))
+                continue
             na_quarentena, original = Path(op["destino"]), Path(op["origem"])
             passo = Passo(
                 origem=na_quarentena, destino=original, tamanho=op["tamanho"] or 0,
@@ -285,6 +305,27 @@ class Quarentena:
             plano.passos.append(passo)
         return plano
 
+    def planejar_remover_pastas(self, pastas: Iterable[str | Path], descricao: str = "remover pastas vazias") -> Plano:
+        """Prévia de remover pastas VAZIAS (só remove se continuar vazia na hora; o desfazer recria)."""
+        plano = Plano("remover_pasta", descricao)
+        lista = [Path(p).resolve() for p in pastas]
+        no_plano = set(lista)
+
+        def vazia(pasta: Path) -> bool:
+            """Vazia, ou só com subpastas que também estão no plano (e serão removidas antes)."""
+            return all(e.is_dir() and e in no_plano and vazia(e) for e in pasta.iterdir())
+
+        for pasta in sorted(lista, key=lambda p: (-len(p.parts), str(p).casefold())):  # mais funda primeiro
+            passo = Passo(origem=pasta, destino=None, tamanho=0)
+            if not pasta.is_dir():
+                passo.problema = "pasta não existe"
+            elif not dentro_da_pasta_teste(pasta, self.limite) or pasta == self.limite:
+                passo.problema = f"fora da área permitida ({self.limite})"
+            elif not vazia(pasta):
+                passo.problema = "não está vazia"
+            plano.passos.append(passo)
+        return plano
+
     def planejar_esvaziar(self) -> Plano:
         """Lista o que seria APAGADO DE VEZ: só itens do histórico que ainda estão na quarentena."""
         plano = Plano("esvaziar", "esvaziar a quarentena (apaga de vez)")
@@ -299,14 +340,16 @@ class Quarentena:
 
     # --- executar --------------------------------------------------------------
 
-    def executar(self, plano: Plano) -> Resultado:
+    def executar(self, plano: Plano, *, lote_id: int | None = None) -> Resultado:
+        """Executa o plano. `lote_id` junta este plano a um lote já existente (ex.: remover as
+        pastas que o organizar esvaziou entra no MESMO lote, e um único desfazer volta tudo)."""
         resultado = Resultado()
         if not plano.validos:
             return resultado
-        resultado.lote_id = self.indice.criar_lote(plano.tipo, plano.descricao, _agora())
+        resultado.lote_id = lote_id or self.indice.criar_lote(plano.tipo, plano.descricao, _agora())
         self.indice.confirmar()
         acao = {"quarentena": self._mover, "restaurar": self._restaurar, "esvaziar": self._apagar,
-                "organizar": self._organizar}[plano.tipo]
+                "organizar": self._organizar, "remover_pasta": self._remover_pasta}[plano.tipo]
         hashes_mantidos: dict[Path, str] = {}
         for passo in plano.validos:
             try:
@@ -376,6 +419,9 @@ class Quarentena:
         self.indice.remover_arquivo(str(origem))
 
     def _restaurar(self, passo: Passo, lote_id: int, _: dict[Path, str]) -> None:
+        if passo.recriar_pasta:
+            self._recriar_pasta(passo, lote_id)
+            return
         origem, destino = passo.origem, passo.destino
         assert destino is not None
         self._conferir_limite(origem, destino)
@@ -413,6 +459,33 @@ class Quarentena:
             indexar_arquivo(destino, self.indice, pasta_raiz)
         if erro:
             raise OperacaoRecusada(erro)
+
+    def _remover_pasta(self, passo: Passo, lote_id: int, _: dict[Path, str]) -> None:
+        pasta = passo.origem
+        self._conferir_limite(pasta)
+        if any(pasta.iterdir()):
+            raise OperacaoRecusada("a pasta não está mais vazia; não removi")
+        op_id = self.indice.registrar_operacao(
+            lote_id=lote_id, tipo="remover_pasta", origem=str(pasta), destino="", pasta_raiz=None,
+            tamanho=0, hash_completo=None, ref_operacao=None, agora=_agora(),
+        )
+        self.gancho(ANTES_DE_MEXER, passo)
+        self._no_disco(op_id, lambda: os.rmdir(pasta))  # rmdir só remove pasta vazia
+        self.gancho(DEPOIS_DE_MEXER, passo)
+        self.indice.concluir_operacao(op_id, "feita", _agora(), situacao="removida")
+        self.indice.confirmar()
+
+    def _recriar_pasta(self, passo: Passo, lote_id: int) -> None:
+        pasta = passo.destino
+        self._conferir_limite(pasta)
+        op_id = self.indice.registrar_operacao(
+            lote_id=lote_id, tipo="recriar_pasta", origem="", destino=str(pasta), pasta_raiz=None,
+            tamanho=0, hash_completo=None, ref_operacao=passo.ref_operacao, agora=_agora(),
+        )
+        self._no_disco(op_id, lambda: pasta.mkdir(parents=True, exist_ok=True))
+        self.indice.concluir_operacao(op_id, "feita", _agora())
+        self.indice.mudar_situacao(passo.ref_operacao, "restaurado")
+        self.indice.confirmar()
 
     def _organizar(self, passo: Passo, lote_id: int, _: dict[Path, str]) -> None:
         origem, destino = passo.origem, passo.destino

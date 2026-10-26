@@ -341,10 +341,12 @@ class Indice:
         ).fetchall()
 
     def itens_desfaziveis(self, *, item: int | None = None, lote: int | None = None) -> list[sqlite3.Row]:
-        """O que dá para desfazer: arquivos na quarentena e arquivos movidos pelo organizar."""
+        """O que dá para desfazer: arquivos na quarentena, arquivos movidos pelo organizar
+        e pastas que o organizar esvaziou e removeu."""
         sql = """SELECT * FROM operacoes WHERE
                  ((tipo = 'quarentena' AND situacao = 'na_quarentena')
-                  OR (tipo = 'organizar' AND situacao = 'organizado'))"""
+                  OR (tipo = 'organizar' AND situacao = 'organizado')
+                  OR (tipo = 'remover_pasta' AND situacao = 'removida'))"""
         args: list[int] = []
         if item is not None:
             sql += " AND id = ?"

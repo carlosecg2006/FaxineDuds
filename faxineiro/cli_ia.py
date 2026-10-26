@@ -23,7 +23,7 @@ from .formato import formatar_duracao, relativo
 from .ia import ClienteOllama, EnderecoNaoLocal, avaliar_ia, memoria_necessaria
 from .indice import Indice
 from .memoria import MB, memoria_disponivel, memoria_total
-from .organizacao import planejar_organizacao, sugerir_pastas
+from .organizacao import pastas_esvaziadas, planejar_organizacao, sugerir_pastas
 from .quarentena import Quarentena
 
 
@@ -198,9 +198,24 @@ def cmd_organizar(args: argparse.Namespace) -> int:
             print("Cancelado. Nada foi movido.")
             return 0
         res = q.executar(plano)
-    print(f"Lote {res.lote_id}: {len(res.feitos)} movidos, {len(res.falhas)} com problema.")
-    for passo, msg in res.falhas:
-        print(f"  problema: {relativo(passo.origem, base)}: {msg}")
+        print(f"Lote {res.lote_id}: {len(res.feitos)} movidos, {len(res.falhas)} com problema.")
+        for passo, msg in res.falhas:
+            print(f"  problema: {relativo(passo.origem, base)}: {msg}")
+
+        # Pastas que o próprio organizar esvaziou (nunca as que já estavam vazias antes).
+        vazias = pastas_esvaziadas([p.origem for p in res.feitos], base)
+        if vazias:
+            plano_pastas = q.planejar_remover_pastas(vazias, "pastas esvaziadas pelo organizar")
+            print("== Prévia: pastas que o organizar esvaziou ".ljust(60, "="))
+            for p in plano_pastas.passos:
+                nota = f" — PULA: {p.problema}" if p.problema else ""
+                print(f"  {relativo(p.origem, base)}\\{nota}")
+            if plano_pastas.validos and (args.so_previa is False) and cli_quarentena._confirmar(
+                    "Remover estas pastas vazias? (o desfazer recria)", args):
+                r2 = q.executar(plano_pastas, lote_id=res.lote_id)
+                print(f"{len(r2.feitos)} pasta(s) vazia(s) removida(s) (no mesmo lote {res.lote_id}).")
+            else:
+                print("Pastas mantidas.")
     print(f"Para desfazer tudo: python -m faxineiro quarentena desfazer --lote {res.lote_id}")
     return 0 if not res.falhas else 1
 

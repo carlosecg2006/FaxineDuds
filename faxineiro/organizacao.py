@@ -212,6 +212,34 @@ def sugerir_pastas(
     return r
 
 
+def pastas_esvaziadas(origens: list[Path], base: str | Path, protecoes: Protecoes | None = None) -> list[Path]:
+    """Pastas que O PRÓPRIO ORGANIZAR esvaziou (tinham pelo menos um dos arquivos movidos).
+
+    Pastas que já estavam vazias antes nunca entram: só olhamos as pastas de onde saiu algum
+    arquivo, e as de cima delas que ficaram vazias por causa disso. A pasta `base` nunca entra.
+    Ordem: da mais funda para a mais rasa (é a ordem certa para remover).
+    """
+    base = Path(base).resolve()
+    protecoes = protecoes or Protecoes()
+    candidatas: set[Path] = set()
+    for origem in origens:
+        pasta = Path(origem).parent
+        while pasta != base and base in pasta.parents:
+            candidatas.add(pasta)
+            pasta = pasta.parent
+
+    def ficaria_vazia(pasta: Path) -> bool:
+        try:
+            entradas = list(pasta.iterdir())
+        except OSError:
+            return False
+        return all(e.is_dir() and e in candidatas and ficaria_vazia(e) for e in entradas)
+
+    escolhidas = [p for p in candidatas
+                  if p.is_dir() and ficaria_vazia(p) and not protecoes.motivo_para_nao_organizar(p / "x", base)]
+    return sorted(escolhidas, key=lambda p: (-len(p.parts), str(p).casefold()))
+
+
 def planejar_organizacao(
     indice: Indice, pasta: str | Path, quarentena: Quarentena, protecoes: Protecoes | None = None
 ) -> Plano:

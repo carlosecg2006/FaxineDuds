@@ -203,7 +203,11 @@ bloqueio não pegaria:
   currículo para "Imagens/Viagens"). Demo real em 26/10/2026: 55 arquivos
   organizados e desfeitos (hash conferido); jogo, projeto e OneDrive intactos.
   233 testes.
-  Pendente pequeno: o organizar deixa as pastas de origem vazias (o Raio-X
-  as lista); a demo deixou `Imagens`, `Outros`, `Textos` e duas subpastas de
-  `Documentos` vazias na pasta_teste (bug já corrigido, sobra antiga).
+  Depois de organizar, o app oferece remover (com prévia) só as pastas que o
+  próprio organizar esvaziou (`organizacao.pastas_esvaziadas`; nunca as que já
+  estavam vazias), como operação `remover_pasta` no MESMO lote — um desfazer
+  recria as pastas e devolve os arquivos. 238 testes.
+  Sobra da demo: `Imagens`, `Outros`, `Textos` e `Documentos\2026`,
+  `Documentos\Boleto digital` vazias na pasta_teste; o `rmdir` foi bloqueado
+  pelo settings.json, então o Carlos remove à mão.
 - Próxima: Fase 5 — Interface PySide6.
