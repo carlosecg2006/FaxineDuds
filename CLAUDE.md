@@ -62,6 +62,7 @@ bloqueio não pegaria:
 - SQLite para o índice
 - Hash BLAKE3 para duplicados (tamanho → hash parcial → hash completo)
 - Ollama local (modelo de texto leve; modelo de visão opcional)
+- Fase 5B: ffmpeg (vídeo/áudio), Pillow (imagens), LibreOffice (documentos)
 - Fase 8: rclone com remoto `crypt` (Google Drive por padrão, trocável)
 - Fase 10: FastAPI (servidor local) + PWA (versão web para o celular)
 - Testes com pytest; commit no Git ao fim de cada fase
@@ -70,16 +71,28 @@ bloqueio não pegaria:
 | Fase | Nome | Resumo |
 |---|---|---|
 | 0 | Estudo de referência | Concluída — `docs/estudo.md` |
-| 1 | Scanner e índice | Varrer pastas e gravar no SQLite (com `aparelho` e `conectado`) |
-| 2 | Raio-X | Duplicados, arquivos pesados e lixo |
+| 1 | Scanner e índice | Concluída — varrer pastas e gravar no SQLite (com `aparelho` e `conectado`) |
+| 2 | Raio-X | Concluída — duplicados, arquivos pesados e lixo |
 | 3 | Quarentena e desfazer | Mover para `_quarentena` com diário de operações (ideia do fo-core) |
 | 4 | IA local | Descrever e classificar arquivos com Ollama; modo sem IA |
 | 5 | Interface | App gráfico em PySide6 |
+| 5B | Conversor de arquivos | Ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
+
+### Fase 5B — Conversor de arquivos
+- Converter dentro do app: vídeo/áudio com ffmpeg, imagens com Pillow,
+  documentos com LibreOffice (modo sem janela).
+- Duas opções: criar um arquivo novo ou substituir o original. Ao
+  substituir, o original vai para a `_quarentena`, com desfazer
+  (regras 1 e 2: prévia e confirmação antes).
+- Extrair áudio de vídeo sem recodificar quando possível (cópia do
+  fluxo de áudio), para ser quase instantâneo.
+- Barra de progresso nas conversões longas.
+- O arquivo convertido entra no índice automaticamente.
 
 ### Fase 8 — Arquivo Morto na nuvem
 - O usuário escolhe arquivos e clica em "Arquivar".
