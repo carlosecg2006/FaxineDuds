@@ -59,7 +59,7 @@ def test_recusa_esquema_mais_novo(tmp_path):
         Indice(caminho)
 
 
-def test_migra_banco_v1_para_v2(tmp_path):
+def test_migra_banco_v1_para_a_versao_atual(tmp_path):
     from faxineiro.indice import _ESQUEMA
 
     caminho = tmp_path / "antigo.sqlite"
@@ -74,9 +74,11 @@ def test_migra_banco_v1_para_v2(tmp_path):
     con.close()
 
     with Indice(caminho) as i:
-        assert i.con.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert i.con.execute("PRAGMA user_version").fetchone()[0] == VERSAO_ESQUEMA
         colunas = {l["name"] for l in i.con.execute("PRAGMA table_info(arquivos)")}
         assert "hash_em" in colunas
+        tabelas = {l[0] for l in i.con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"lotes", "operacoes"} <= tabelas
         assert i.contar() == 1
 
 

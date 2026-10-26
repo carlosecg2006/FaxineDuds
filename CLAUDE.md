@@ -13,7 +13,10 @@ um conceito por vez, sem enrolação.
 
 ## Regras invioláveis
 1. Nunca apagar arquivo do usuário. "Excluir" = mover para a quarentena
-   (pasta _quarentena) e registrar no histórico, com desfazer.
+   (pasta _quarentena na mesma unidade) e registrar no histórico, com
+   desfazer. Única exceção: "Esvaziar a quarentena", que apaga de vez,
+   só com confirmação dupla e mostrando o espaço liberado (decisão do
+   Carlos, Fase 3).
 2. Nada é movido sem prévia (dry-run) e confirmação do usuário.
 3. Nunca tocar em C:\Windows, C:\Program Files, C:\ProgramData,
    AppData e pastas de programas. Lista de bloqueio configurável.
@@ -143,5 +146,15 @@ bloqueio não pegaria:
   lixo: vazios, temporários, pastas vazias; extensão errada calculada na hora
   por `tipos.extensao_confere`). Índice no esquema v2 (migração com
   `hash_em` + índice SQL no hash). CLI: `python -m faxineiro raiox [--top N]`.
-  Só lê: nada é movido. 53 testes.
-- Próxima: Fase 3 — Quarentena e desfazer.
+  Só lê: nada é movido. Pesados com mínimo de 100 MB (`--teste` = 1 MB).
+- Fase 3 — concluída. `quarentena.py`: planejar_* (prévia) → executar;
+  diário write-ahead na tabela `operacoes` (esquema v3, + `lotes`);
+  `recuperar_diario()` roda no início de todo comando e termina/marca as
+  operações interrompidas; desfazer item/lote conferindo hash, nunca
+  sobrescreve (renomear "(restaurado)" ou pular); esvaziar com confirmação
+  dupla; duplicados do Raio-X mantendo o sugerido (confere a cópia que fica).
+  Quarentena em `pasta_teste\_quarentena` no modo dev (`config.pasta_quarentena`),
+  caminho relativo dentro do lote (evita o limite de 260 caracteres).
+  CLI: `python -m faxineiro quarentena mover|duplicados|listar|desfazer|esvaziar`.
+  88 testes.
+- Próxima: Fase 4 — IA local (Ollama).

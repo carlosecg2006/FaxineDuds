@@ -1,4 +1,4 @@
-"""Linha de comando: python -m faxineiro escanear|raiox [pasta]"""
+"""Linha de comando: python -m faxineiro escanear|raiox|quarentena ..."""
 
 from __future__ import annotations
 
@@ -16,21 +16,13 @@ from .config import (
     TOP_PESADOS,
     dentro_da_pasta_teste,
 )
+from . import cli_quarentena
+from .formato import formatar_bytes
+from .formato import numero as _numero
+from .formato import relativo as _relativo
 from .hashes import Hasher
 from .indice import Indice
 from .scanner import Progresso, escanear
-
-
-def formatar_bytes(n: int) -> str:
-    for unidade in ("B", "KB", "MB", "GB"):
-        if n < 1024 or unidade == "GB":
-            return f"{n:.0f} {unidade}" if unidade == "B" else f"{n:.1f} {unidade}"
-        n /= 1024
-    return f"{n} B"
-
-
-def _numero(n: int) -> str:
-    return f"{n:,}".replace(",", ".")
 
 
 def _pasta_permitida(pasta: Path) -> int | None:
@@ -74,13 +66,6 @@ def cmd_escanear(args: argparse.Namespace) -> int:
 
 
 # --- raio-x ----------------------------------------------------------------
-
-
-def _relativo(caminho: str, base: Path) -> str:
-    try:
-        return str(Path(caminho).relative_to(base))
-    except ValueError:
-        return caminho
 
 
 def _titulo(texto: str) -> None:
@@ -201,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
                     help=f"modo de teste: mínimo de {PESADO_MINIMO_TESTE // MB} MB para a pasta_teste")
     rx.add_argument("--indice", default=str(CAMINHO_INDICE), help=argparse.SUPPRESS)
     rx.set_defaults(func=cmd_raiox)
+
+    cli_quarentena.registrar(sub)
 
     args = parser.parse_args(argv)
     return args.func(args)

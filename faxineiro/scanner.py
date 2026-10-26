@@ -79,6 +79,46 @@ def _percorrer(
                 progresso.avisos.append(f"Erro em {entrada.path}: {erro.strerror}")
 
 
+def _montar_registro(
+    caminho: str,
+    st: os.stat_result,
+    pasta_raiz: str,
+    aparelho: str,
+    detector: Callable[[Path], TipoDetectado],
+) -> Registro:
+    tipo = detector(Path(caminho))
+    nome = Path(caminho).name
+    return Registro(
+        caminho=caminho,
+        pasta_raiz=pasta_raiz,
+        nome=nome,
+        extensao=Path(nome).suffix.lower().lstrip("."),
+        tamanho=st.st_size,
+        criado_em=_iso(getattr(st, "st_birthtime", st.st_ctime)),
+        modificado_em=_iso(st.st_mtime),
+        modificado_ns=st.st_mtime_ns,
+        tipo_real=tipo.tipo_real,
+        categoria=tipo.categoria,
+        extensao_confere=tipo.extensao_confere,
+        aparelho=aparelho,
+        conectado=True,
+    )
+
+
+def indexar_arquivo(
+    caminho: str | Path,
+    indice: Indice,
+    pasta_raiz: str,
+    *,
+    aparelho: str = "pc",
+    detector: Callable[[Path], TipoDetectado] = detectar_tipo,
+) -> None:
+    """Coloca (ou atualiza) um único arquivo no índice, sem varrer a pasta inteira."""
+    caminho = str(Path(caminho).resolve())
+    st = os.stat(caminho)
+    indice.gravar(_montar_registro(caminho, st, pasta_raiz, aparelho, detector), 0, _agora())
+
+
 def escanear(
     pasta: str | Path,
     indice: Indice,
@@ -116,32 +156,12 @@ def escanear(
             iguais_pendentes.append(caminho)
         else:
             try:
-                tipo = detector(Path(caminho))
+                registro = _montar_registro(caminho, st, pasta_raiz, aparelho, detector)
             except OSError as erro:
                 progresso.erros += 1
                 progresso.avisos.append(f"Não consegui ler {caminho}: {erro.strerror}")
                 continue
-            criado = getattr(st, "st_birthtime", st.st_ctime)
-            nome = entrada.name
-            indice.gravar(
-                Registro(
-                    caminho=caminho,
-                    pasta_raiz=pasta_raiz,
-                    nome=nome,
-                    extensao=Path(nome).suffix.lower().lstrip("."),
-                    tamanho=st.st_size,
-                    criado_em=_iso(criado),
-                    modificado_em=_iso(st.st_mtime),
-                    modificado_ns=st.st_mtime_ns,
-                    tipo_real=tipo.tipo_real,
-                    categoria=tipo.categoria,
-                    extensao_confere=tipo.extensao_confere,
-                    aparelho=aparelho,
-                    conectado=True,
-                ),
-                varredura_id,
-                _agora(),
-            )
+            indice.gravar(registro, varredura_id, _agora())
             if anterior is None:
                 progresso.novos += 1
             else:

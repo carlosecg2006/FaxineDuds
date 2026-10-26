@@ -1,0 +1,195 @@
+"""Comandos da quarentena: mover, duplicados, listar, desfazer, esvaziar.
+
+Todos mostram a prévia (dry-run) primeiro e só executam depois da confirmação.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Callable
+from pathlib import Path
+
+from .config import CAMINHO_INDICE, PASTA_TESTE, dentro_da_pasta_teste
+from .formato import formatar_bytes, relativo
+from .indice import Indice
+from .quarentena import Plano, Quarentena, Resultado
+
+
+def _perguntar(texto: str) -> str:
+    try:
+        return input(texto).strip()
+    except EOFError:  # sem teclado (ex.: rodando por script): vale como "não"
+        return ""
+
+
+def _confirmar(texto: str, args: argparse.Namespace) -> bool:
+    if getattr(args, "sim", False):
+        return True
+    return _perguntar(f"{texto} (s/n): ").lower() in ("s", "sim")
+
+
+def _abrir(args: argparse.Namespace) -> tuple[Indice, Quarentena]:
+    indice = Indice(args.indice)
+    q = Quarentena(indice, limite=PASTA_TESTE)
+    for msg in q.recuperar_diario():
+        print(f"[diário] {msg}")
+    return indice, q
+
+
+def _mostrar_plano(plano: Plano, titulo: str) -> None:
+    print(f"== Prévia: {titulo} ".ljust(60, "="))
+    for i, p in enumerate(plano.passos, 1):
+        origem = relativo(p.origem, PASTA_TESTE)
+        if p.problema:
+            print(f"  {i:>3}. PULA  {origem}  — {p.problema}")
+            continue
+        if plano.tipo == "esvaziar":
+            print(f"  {i:>3}. APAGA {origem}  ({formatar_bytes(p.tamanho)})")
+        elif plano.tipo == "restaurar":
+            nota = "  (com outro nome: já existe um arquivo lá)" if p.renomeado else ""
+            print(f"  {i:>3}. volta para {relativo(p.destino, PASTA_TESTE)}{nota}")
+        else:
+            mantem = f"  (fica: {relativo(p.manter, PASTA_TESTE)})" if p.manter else ""
+            print(f"  {i:>3}. {origem}  ({formatar_bytes(p.tamanho)}){mantem}")
+    print(f"Total: {len(plano.validos)} arquivo(s), {formatar_bytes(plano.total_bytes)}")
+
+
+def _mostrar_resultado(r: Resultado, verbo: str) -> None:
+    if r.lote_id is not None:
+        print(f"Lote {r.lote_id}: {len(r.feitos)} {verbo}, {len(r.falhas)} com problema.")
+    for passo, msg in r.falhas:
+        print(f"  problema: {relativo(passo.origem, PASTA_TESTE)}: {msg}")
+
+
+def _rodar(args: argparse.Namespace, montar: Callable[[Quarentena], Plano], titulo: str, verbo: str) -> int:
+    indice, q = _abrir(args)
+    try:
+        plano = montar(q)
+        _mostrar_plano(plano, titulo)
+        if not plano.validos:
+            print("Nada a fazer.")
+            return 0
+        if args.so_previa:
+            print("(só prévia: nada foi feito)")
+            return 0
+        if not _confirmar("Confirmar?", args):
+            print("Cancelado. Nada foi feito.")
+            return 0
+        r = q.executar(plano)
+        _mostrar_resultado(r, verbo)
+        return 0 if not r.falhas else 1
+    finally:
+        indice.fechar()
+
+
+# --- comandos ------------------------------------------------------------------
+
+
+def cmd_mover(args: argparse.Namespace) -> int:
+    return _rodar(args, lambda q: q.planejar_mover(args.arquivos),
+                  "mandar para a quarentena", "na quarentena")
+
+
+def cmd_duplicados(args: argparse.Namespace) -> int:
+    pasta = Path(args.pasta)
+    if not dentro_da_pasta_teste(pasta):
+        print(f"Recusado: durante o desenvolvimento só posso trabalhar em {PASTA_TESTE}.", file=sys.stderr)
+        return 2
+    return _rodar(args, lambda q: q.planejar_duplicados(pasta),
+                  "duplicados do Raio-X para a quarentena (fica o sugerido)", "na quarentena")
+
+
+def cmd_desfazer(args: argparse.Namespace) -> int:
+    def conflito(original: Path) -> str:
+        if args.conflito != "perguntar":
+            return args.conflito
+        resp = _perguntar(f"Já existe {relativo(original, PASTA_TESTE)}. [r]enomear o restaurado ou [p]ular? ")
+        return "renomear" if resp.lower().startswith("r") else "pular"
+
+    return _rodar(args, lambda q: q.planejar_desfazer(item=args.item, lote=args.lote, conflito=conflito),
+                  "desfazer (trazer de volta)", "restaurados com hash conferido")
+
+
+def cmd_listar(args: argparse.Namespace) -> int:
+    indice, _ = _abrir(args)
+    try:
+        itens = indice.itens_na_quarentena()
+        if not itens:
+            print("A quarentena está vazia.")
+            return 0
+        print(f"{'item':>5} {'lote':>5}  {'tamanho':>10}  {'quando':<19}  de onde veio")
+        for op in itens:
+            print(f"{op['id']:>5} {op['lote_id']:>5}  {formatar_bytes(op['tamanho'] or 0):>10}  "
+                  f"{op['concluido_em']:<19}  {relativo(op['origem'], PASTA_TESTE)}")
+        total = sum(op["tamanho"] or 0 for op in itens)
+        print(f"Total: {len(itens)} arquivo(s), {formatar_bytes(total)}")
+        return 0
+    finally:
+        indice.fechar()
+
+
+def cmd_esvaziar(args: argparse.Namespace) -> int:
+    indice, q = _abrir(args)
+    try:
+        plano = q.planejar_esvaziar()
+        _mostrar_plano(plano, "ESVAZIAR A QUARENTENA (apaga de vez, sem volta)")
+        if not plano.validos:
+            print("Nada a apagar.")
+            return 0
+        if args.so_previa:
+            print("(só prévia: nada foi apagado)")
+            return 0
+        espaco = formatar_bytes(plano.total_bytes)
+        print(f"Isto vai liberar {espaco} e NÃO DÁ PARA DESFAZER.")
+        if _perguntar("1/2 — Tem certeza? (s/n): ").lower() not in ("s", "sim"):
+            print("Cancelado. Nada foi apagado.")
+            return 0
+        if _perguntar("2/2 — Digite ESVAZIAR para confirmar: ") != "ESVAZIAR":
+            print("Cancelado. Nada foi apagado.")
+            return 0
+        r = q.executar(plano)
+        liberado = sum(p.tamanho for p in r.feitos)
+        _mostrar_resultado(r, "apagados")
+        print(f"Liberado: {formatar_bytes(liberado)}")
+        return 0 if not r.falhas else 1
+    finally:
+        indice.fechar()
+
+
+def registrar(sub: argparse._SubParsersAction) -> None:
+    q = sub.add_parser("quarentena", help="excluir com segurança, desfazer e esvaziar")
+    qsub = q.add_subparsers(dest="acao", required=True)
+
+    def comum(p: argparse.ArgumentParser, com_sim: bool = True) -> None:
+        p.add_argument("--so-previa", action="store_true", help="só mostra o que seria feito")
+        if com_sim:
+            p.add_argument("--sim", action="store_true", help="não pergunta (a prévia aparece mesmo assim)")
+        p.add_argument("--indice", default=str(CAMINHO_INDICE), help=argparse.SUPPRESS)
+
+    m = qsub.add_parser("mover", help="manda arquivos para a quarentena")
+    m.add_argument("arquivos", nargs="+")
+    comum(m)
+    m.set_defaults(func=cmd_mover)
+
+    d = qsub.add_parser("duplicados", help="manda os duplicados do Raio-X, mantendo o sugerido")
+    d.add_argument("pasta", nargs="?", default=str(PASTA_TESTE))
+    comum(d)
+    d.set_defaults(func=cmd_duplicados)
+
+    l = qsub.add_parser("listar", help="mostra o que está na quarentena")
+    l.add_argument("--indice", default=str(CAMINHO_INDICE), help=argparse.SUPPRESS)
+    l.set_defaults(func=cmd_listar)
+
+    u = qsub.add_parser("desfazer", help="traz de volta um item ou um lote")
+    alvo = u.add_mutually_exclusive_group(required=True)
+    alvo.add_argument("--item", type=int)
+    alvo.add_argument("--lote", type=int)
+    u.add_argument("--conflito", choices=["perguntar", "renomear", "pular"], default="perguntar",
+                   help="se já existir arquivo com o mesmo nome (nunca sobrescreve)")
+    comum(u)
+    u.set_defaults(func=cmd_desfazer)
+
+    e = qsub.add_parser("esvaziar", help="APAGA DE VEZ o que está na quarentena (confirmação dupla)")
+    comum(e, com_sim=False)
+    e.set_defaults(func=cmd_esvaziar)

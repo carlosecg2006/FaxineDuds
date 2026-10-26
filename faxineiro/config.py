@@ -27,6 +27,21 @@ NOMES_BLOQUEADOS: tuple[str, ...] = (
 )
 
 
+# Quarentena (Fase 3)
+NOME_QUARENTENA = "_quarentena"
+
+
+def pasta_quarentena(arquivo: str | Path, modo_dev: bool = True) -> Path:
+    """Onde fica a quarentena de um arquivo: sempre na MESMA unidade (mover = renomear, sem cópia).
+
+    Durante o desenvolvimento (regra 5) é `pasta_teste\\_quarentena`; na Fase 7 passa a ser
+    a raiz da unidade do arquivo, ex.: `D:\\_quarentena`.
+    """
+    if modo_dev:
+        return PASTA_TESTE / NOME_QUARENTENA
+    return Path(Path(arquivo).resolve().anchor) / NOME_QUARENTENA
+
+
 # Raio-X (Fase 2): o que conta como arquivo temporário / lixo.
 TEMP_EXTENSOES: set[str] = {"tmp", "temp", "crdownload", "part", "partial"}
 TEMP_PREFIXOS: tuple[str, ...] = ("~$",)  # rascunhos do Office
