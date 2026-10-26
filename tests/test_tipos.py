@@ -65,6 +65,12 @@ def test_extensao_desconhecida_nao_e_acusada(tmp_path):
         assert detectar_tipo(p).extensao_confere is True, nome
 
 
+def test_dll_nao_e_extensao_errada():
+    from faxineiro.tipos import extensao_confere
+
+    assert extensao_confere("exe", "dll")  # DLL e EXE têm a mesma assinatura MZ
+
+
 def test_texto_utf8(tmp_path):
     p = tmp_path / "notas.txt"
     p.write_text("Olá, acentuação ç ã é\n" * 50, encoding="utf-8")

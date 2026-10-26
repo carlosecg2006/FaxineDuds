@@ -18,7 +18,7 @@ class ClienteFalso:
         visao: str | None = None,
         falhar: Callable[[str], bool] = lambda prompt: False,
         indisponivel: bool = False,
-        pasta: Callable[[str], str] = lambda prompt: "Documentos/Geral",
+        pasta: Callable[[str], str] = lambda prompt: "Faculdade",  # o "assunto" que a IA responde
         modelo: str = "qwen2.5:0.5b",
         tamanho_modelo: int = 400 * MB,
         ja_carregado: bool = True,  # carregado = não precisa de memória nova (testes não dependem da RAM)
@@ -50,7 +50,7 @@ class ClienteFalso:
         if self.falhar(prompt):
             raise IATempoEsgotado(f"sem resposta em {timeout:.0f} s")
         if formato_json:
-            return json.dumps({"pasta": self.pasta(prompt)})
+            return json.dumps({"assunto": self.pasta(prompt)})
         if imagens:
             return "Foto de uma praia ensolarada"
         return f"Descrição gerada pela IA número {len(self.chamadas)}"

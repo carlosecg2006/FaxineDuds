@@ -29,7 +29,8 @@ _SINONIMOS: dict[str, set[str]] = {
     "mp4": {"mp4", "m4v"},
     "m4a": {"m4a", "mp4"},
     "mov": {"mov", "qt"},
-    "exe": {"exe", "com", "scr"},
+    # EXE e DLL têm a mesma assinatura ("MZ"): pelo conteúdo não dá para separar.
+    "exe": {"exe", "com", "scr", "dll", "sys", "ocx", "cpl", "drv"},
     "dll": {"dll", "sys", "ocx"},
     "doc": {"doc", "xls", "ppt", "msi", "msg"},  # formato OLE antigo compartilhado
     "xls": {"doc", "xls", "ppt", "msi", "msg"},

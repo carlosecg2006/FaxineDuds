@@ -52,6 +52,17 @@ def amostras() -> dict[str, bytes]:
     arquivos["Downloads/cache.tmp"] = b"temporario" * 30
     arquivos["Fotos/Thumbs.db"] = b"miniaturas do windows" * 10
     # Fase 4 (IA): 10 arquivos com conteúdo de verdade, para comparar modelos.
+    # Protegidos: o organizar nunca pode mexer nestes.
+    arquivos["Projetos/meu_site/package.json"] = b'{"name": "meu-site", "version": "1.0.0"}'
+    arquivos["Projetos/meu_site/index.html"] = b"<html><body>Meu site</body></html>"
+    arquivos["Projetos/meu_site/anotacoes.txt"] = "ideias para o site".encode()
+    arquivos["Jogos/MeuJogo/jogo.exe"] = b"MZ" + bytes(200)
+    arquivos["Jogos/MeuJogo/engine.dll"] = b"MZ" + bytes(100)
+    arquivos["Jogos/MeuJogo/save1.sav"] = b"progresso do jogo"
+    arquivos["OneDrive/relatorio_estagio.txt"] = "Relatório de estágio — sincronizado com a nuvem".encode()
+    # Nomes genéricos: as regras não sabem o que são, então vão para a IA.
+    arquivos["Downloads/Novo Documento.txt"] = "Reunião do grupo de TCC na quinta às 19h, levar o cronograma.".encode()
+    arquivos["Downloads/scan_0001.txt"] = "Comprovante de matrícula 2026/2, curso de ADS, aluno Carlos.".encode()
     for nome, texto in AMOSTRAS_IA.items():
         arquivos[f"Amostras_IA/{nome}"] = texto.encode("utf-8")
     arquivos["Amostras_IA/contrato_aluguel.docx"] = bytes_docx_com_texto(

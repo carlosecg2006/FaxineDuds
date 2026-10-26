@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -19,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from . import config
 from .extracao import comeco_do_texto
 from .formato import formatar_bytes
 from .ia import IAIndisponivel, IATempoEsgotado, StatusIA, avaliar_ia
@@ -34,6 +36,25 @@ _NOME_CATEGORIA = {
     "video": "Vídeo", "compactado": "Arquivo compactado", "executavel": "Programa", "outro": "Arquivo",
 }
 _MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+# Tipos que se explicam pela extensão: as regras descrevem, sem IA.
+EXTENSOES_OBVIAS = {
+    "log": "Arquivo de log", "py": "Código-fonte Python", "js": "Código JavaScript", "ts": "Código TypeScript",
+    "java": "Código Java", "c": "Código C", "cpp": "Código C++", "h": "Cabeçalho C/C++", "cs": "Código C#",
+    "html": "Página HTML", "htm": "Página HTML", "css": "Folha de estilo CSS", "json": "Dados JSON",
+    "xml": "Dados XML", "yaml": "Configuração YAML", "yml": "Configuração YAML", "ini": "Configuração",
+    "cfg": "Configuração", "toml": "Configuração TOML", "sql": "Script SQL", "bat": "Script do Windows",
+    "ps1": "Script PowerShell", "sh": "Script de shell", "srt": "Legenda de vídeo",
+}
+# Palavras que não dizem nada sobre o conteúdo ("Novo documento (2).docx", "scan_0001.pdf").
+PALAVRAS_GENERICAS = {
+    "documento", "document", "doc", "arquivo", "file", "novo", "nova", "new", "copia", "cópia", "copy",
+    "sem", "titulo", "título", "untitled", "scan", "digitalizado", "digitalizacao", "img", "image", "imagem",
+    "foto", "final", "teste", "test", "temp", "tmp", "download", "downloads", "anexo", "attachment", "texto",
+    "text", "planilha", "apresentacao", "apresentação", "pasta", "desktop", "documentos", "documents",
+    "area", "área", "trabalho", "outros", "diversos", "misc", "versao", "versão", "rev", "the", "and",
+}
+_SEPARA_PALAVRAS = re.compile(r"[\s_\-.()\[\]]+|(?<=[a-zà-ú])(?=[A-Z])")
 
 
 class ClienteIA(Protocol):
@@ -64,6 +85,22 @@ class ProgressoDescricao:
     ia_ligada: bool = False
     terminou: bool = False
     avisos: list[str] = field(default_factory=list)
+    fase: str = ""  # "inicio" (antes da IA), "estimativa" (já mediu), "lote", "fim"
+    tempos: list[float] = field(default_factory=list)  # segundos por arquivo na IA (sem o aquecimento)
+
+    @property
+    def faltam(self) -> int:
+        return max(self.total - self.feitos, 0)
+
+    @property
+    def estimativa_s(self) -> float | None:
+        """Segundos que ainda faltam, pela média dos arquivos já medidos (None se ainda não mediu)."""
+        if not self.tempos:
+            return None
+        return sum(self.tempos) / len(self.tempos) * self.faltam
+
+
+ARQUIVOS_PARA_MEDIR = 3  # a estimativa sai depois de medir estes primeiros arquivos
 
 
 def _pasta_relativa(linha: sqlite3.Row) -> str:
@@ -87,8 +124,12 @@ def descricao_por_regras(linha: sqlite3.Row) -> str:
     tipo = linha["tipo_real"] or "desconhecido"
     if tipo == "vazio":
         inicio = "Arquivo vazio"
+    elif linha["extensao"] in EXTENSOES_OBVIAS:
+        inicio = EXTENSOES_OBVIAS[linha["extensao"]]
     elif tipo == "desconhecido":
         inicio = "Arquivo de tipo desconhecido"
+    elif tipo == "texto":
+        inicio = f"Arquivo de texto (.{linha['extensao']})" if linha["extensao"] else "Arquivo de texto"
     else:
         inicio = f"{_NOME_CATEGORIA.get(linha['categoria'], 'Arquivo')} {tipo.upper()}"
     return (f"{inicio} com o nome '{linha['nome']}' em '{_pasta_relativa(linha)}', "
@@ -209,12 +250,44 @@ class _Descritor:
         return None
 
 
+def palavras_uteis(texto: str) -> list[str]:
+    """Palavras que dizem algo: 3+ letras e não genéricas ("Novo", "scan", "cópia"...)."""
+    return [p for p in _SEPARA_PALAVRAS.split(texto)
+            if len(p) >= 3 and p.isalpha() and p.casefold() not in PALAVRAS_GENERICAS]
+
+
+def obvio_pelo_nome(linha: sqlite3.Row) -> bool:
+    """Nome + pasta já explicam o arquivo? Ex.: 'Faculdade/resumo_redes.txt' sim; 'Downloads/scan_0001.pdf' não."""
+    caminho = Path(linha["caminho"])
+    return len(palavras_uteis(caminho.stem) + palavras_uteis(caminho.parent.name)) >= 2
+
+
 def precisa_ia(linha: sqlite3.Row) -> bool:
-    """As regras resolvem o óbvio (fotos, vídeos, músicas, programas, zips, vazios).
-    Texto, documentos e arquivos de tipo desconhecido precisam de alguém "ler": ficam para revisar."""
+    """IA seletiva: as regras resolvem o óbvio pelo tipo, pelo nome e pela pasta.
+
+    - Óbvio pelo tipo: fotos, vídeos, músicas, programas, zips, vazios, código, logs, configurações.
+    - Óbvio pelo nome/pasta: 'Faculdade/resumo_redes.txt', 'boleto_luz_outubro.pdf'.
+    - Precisa de IA: texto/documento com nome genérico ('Novo documento.docx', 'scan_0001.pdf')
+      e arquivos de tipo desconhecido.
+    """
     if (linha["tamanho"] or 0) == 0:
         return False
-    return linha["categoria"] in ("texto", "documento") or linha["tipo_real"] == "desconhecido"
+    if linha["tipo_real"] == "desconhecido":
+        return True
+    if linha["categoria"] not in ("texto", "documento"):
+        return False
+    if linha["extensao"] in EXTENSOES_OBVIAS:
+        return False
+    return not obvio_pelo_nome(linha)
+
+
+def prioridade(caminho: str | Path) -> int:
+    """0 = Downloads, 1 = Área de Trabalho, 2 = Documentos, 3 = o resto (config.PRIORIDADE_PASTAS)."""
+    partes = {p.casefold() for p in Path(caminho).parts[:-1]}
+    for nivel, nomes in enumerate(config.PRIORIDADE_PASTAS):
+        if partes & set(nomes):
+            return nivel
+    return len(config.PRIORIDADE_PASTAS)
 
 
 def _agora() -> str:
@@ -233,6 +306,7 @@ def descrever(
     cfg: ConfigDescricao | None = None,
     dormir: Callable[[float], None] = time.sleep,
     memoria: Callable[[], int | None] = memoria_disponivel,
+    relogio: Callable[[], float] = time.monotonic,
 ) -> ProgressoDescricao:
     """IA seletiva, em duas etapas:
 
@@ -252,18 +326,30 @@ def descrever(
         revisar = precisa_ia(linha)
         indice.gravar_descricao(linha["id"], descricao_por_regras(linha), "regras", revisar, _agora())
         progresso.por_regras += 1
+    # Regras melhoraram desde a última rodada? Quem estava na fila e agora é óbvio sai da fila.
+    for linha in indice.pendentes_de_revisao(prefixo):
+        if linha["descricao_origem"] == "regras" and not precisa_ia(linha):
+            indice.gravar_descricao(linha["id"], descricao_por_regras(linha), "regras", False, _agora())
     indice.confirmar()
 
     # Etapa 2: IA só no que as regras deixaram para revisar.
-    para_ia = [] if so_regras else indice.pendentes_de_revisao(prefixo, limite=limite)
+    # Ordem de prioridade: Downloads, Área de Trabalho, Documentos, depois o resto.
+    revisao = sorted(indice.pendentes_de_revisao(prefixo), key=lambda l: (prioridade(l["caminho"]), l["caminho"]))
+    para_ia = [] if so_regras else revisao[:limite] if limite is not None else revisao
     progresso.total = len(para_ia)
-    progresso.revisar = len(indice.pendentes_de_revisao(prefixo))
-    if not para_ia:
-        progresso.terminou = True
+    progresso.revisar = len(revisao)
+
+    def avisar(fase: str) -> None:
+        progresso.fase = fase
         if ao_progredir:
             ao_progredir(progresso)
+
+    if not para_ia:
+        progresso.terminou = True
+        avisar("fim")
         return progresso
 
+    avisar("inicio")  # antes da IA: quantos faltam (a estimativa vem depois de medir os primeiros)
     d = _Descritor(cliente, cfg, progresso, memoria)
     try:
         for linha in para_ia:
@@ -272,8 +358,14 @@ def descrever(
                 break
             if not d.usar_ia:
                 break  # sem IA (desligada, sem memória, falhas seguidas): o resto continua "revisar"
+            aquecendo = not d.aquecido
+            inicio = relogio()
             resultado = d.descrever_com_ia(linha)
             progresso.feitos += 1
+            if resultado and not aquecendo:  # a 1ª chamada carrega o modelo: não entra na média
+                progresso.tempos.append(relogio() - inicio)
+                if len(progresso.tempos) == ARQUIVOS_PARA_MEDIR:
+                    avisar("estimativa")
             if resultado:
                 texto, origem, revisar = resultado
                 indice.gravar_descricao(linha["id"], texto, origem, revisar, _agora())
@@ -284,16 +376,14 @@ def descrever(
             if progresso.feitos % cfg.tamanho_lote == 0:
                 indice.confirmar()
                 progresso.lotes_gravados += 1
-                if ao_progredir:
-                    ao_progredir(progresso)
+                avisar("lote")
                 d.conferir_memoria()
     finally:
         indice.confirmar()
         d.terminar()
     progresso.lotes_gravados += 1
-    if ao_progredir:
-        ao_progredir(progresso)
     progresso.terminou = not progresso.pausado
+    avisar("fim")
     return progresso
 
 

@@ -11,8 +11,15 @@ from pathlib import Path
 
 from . import cli_quarentena
 from .config import CAMINHO_INDICE, MODELO_IA, PASTA_TESTE, dentro_da_pasta_teste
-from .descricoes import ConfigDescricao, ProgressoDescricao, baixar_prioridade, descrever, descrever_arquivo
-from .formato import relativo
+from .descricoes import (
+    ARQUIVOS_PARA_MEDIR,
+    ConfigDescricao,
+    ProgressoDescricao,
+    baixar_prioridade,
+    descrever,
+    descrever_arquivo,
+)
+from .formato import formatar_duracao, relativo
 from .ia import ClienteOllama, EnderecoNaoLocal, avaliar_ia, memoria_necessaria
 from .indice import Indice
 from .memoria import MB, memoria_disponivel, memoria_total
@@ -87,8 +94,17 @@ def cmd_descrever(args: argparse.Namespace) -> int:
     inicio = time.monotonic()
 
     def progresso(p: ProgressoDescricao) -> None:
-        print(f"\rRegras: {p.por_regras} | IA: {p.feitos}/{p.total} ({p.por_ia} descritos) | "
-              f"faltam revisar: {p.revisar}", end="", flush=True)
+        if p.fase == "inicio":
+            print(f"Regras resolveram {p.por_regras} arquivo(s) novo(s) sem IA (óbvios pelo nome, tipo ou pasta).")
+            print(f"Faltam {p.total} arquivo(s) para a IA — ordem: Downloads, Área de Trabalho, Documentos, resto.")
+            print(f"Estimativa: medindo os primeiros {ARQUIVOS_PARA_MEDIR} arquivos...", flush=True)
+        elif p.fase == "estimativa":
+            media = sum(p.tempos) / len(p.tempos)
+            print(f"\nEstimativa: ~{formatar_duracao(p.estimativa_s)} para os {p.faltam} restantes "
+                  f"({media:.1f} s por arquivo).", flush=True)
+        elif p.total:
+            print(f"\rIA: {p.feitos}/{p.total} ({p.por_ia} descritos) | faltam ~{formatar_duracao(p.estimativa_s)}   ",
+                  end="", flush=True)
 
     with Indice(args.indice) as indice, _CtrlC() as ctrl_c:
         if not indice.foi_escaneada(str(pasta.resolve())):
@@ -150,6 +166,14 @@ def cmd_organizar(args: argparse.Namespace) -> int:
             return 0
 
         plano = planejar_organizacao(indice, base, q)
+        if plano.ignorados:
+            print("== Protegidos (o organizar não mexe) ".ljust(60, "="))
+            por_motivo: dict[str, list[Path]] = {}
+            for arquivo, motivo in plano.ignorados:
+                por_motivo.setdefault(motivo, []).append(arquivo)
+            for motivo, arquivos in sorted(por_motivo.items()):
+                print(f"  {len(arquivos)} arquivo(s): {motivo}")
+            print()
         destinos = Counter(relativo(p.destino.parent, base) for p in plano.validos)
         print("== Estrutura proposta ".ljust(60, "="))
         for pasta_nova, n in sorted(destinos.items()):
@@ -161,8 +185,9 @@ def cmd_organizar(args: argparse.Namespace) -> int:
             else:
                 nota = "  (nome trocado: já existe um igual lá)" if p.renomeado else ""
                 print(f"  {i:>3}. {relativo(p.origem, base)}  →  {relativo(p.destino, base)}{nota}")
-        print(f"Total: {len(plano.validos)} arquivo(s) a mover. "
-              f"(sugestões: {r.por_ia} pela IA, {r.por_regras} por regras)")
+        origem = (f"sugestões novas: {r.por_ia} pela IA, {r.por_regras} por regras" if r.sugeridos
+                  else "sugestões guardadas da última vez; use --refazer para pedir novas")
+        print(f"Total: {len(plano.validos)} arquivo(s) a mover. ({origem})")
         if not plano.validos:
             print("Nada a mover: tudo já está nas pastas sugeridas.")
             return 0

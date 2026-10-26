@@ -47,9 +47,10 @@ class Passo:
 
 @dataclass
 class Plano:
-    tipo: str  # quarentena | restaurar | esvaziar
+    tipo: str  # quarentena | restaurar | esvaziar | organizar
     descricao: str
     passos: list[Passo] = field(default_factory=list)
+    ignorados: list[tuple[Path, str]] = field(default_factory=list)  # (arquivo, motivo) que nem entraram
 
     @property
     def validos(self) -> list[Passo]:
@@ -313,6 +314,15 @@ class Quarentena:
                 resultado.feitos.append(passo)
             except (OSError, OperacaoRecusada) as erro:
                 resultado.falhas.append((passo, mensagem_de_erro(erro)))
+        if plano.tipo == "restaurar":
+            # Uma pasta criada pelo organizar (ex.: "Textos") só fica vazia depois que TODOS os
+            # arquivos do lote voltam; por isso a limpeza final vai da pasta mais funda para a mais rasa.
+            criadas: list[str] = []
+            for passo in resultado.feitos:
+                original = self.indice.operacao(passo.ref_operacao) if passo.ref_operacao else None
+                if original is not None and original["tipo"] == "organizar":
+                    criadas += json.loads(original["pastas_criadas"] or "[]")
+            self._remover_pastas_criadas(json.dumps(criadas))
         self._remover_pastas_vazias()
         self.indice.confirmar()
         return resultado
@@ -439,7 +449,7 @@ class Quarentena:
 
     def _remover_pastas_criadas(self, pastas_json: str | None) -> None:
         """Remove (se ficaram vazias) só as pastas que o próprio organizar criou."""
-        for pasta in sorted(json.loads(pastas_json or "[]"), key=len, reverse=True):
+        for pasta in sorted(set(json.loads(pastas_json or "[]")), key=len, reverse=True):
             try:
                 os.rmdir(pasta)  # só remove pasta vazia
             except OSError:

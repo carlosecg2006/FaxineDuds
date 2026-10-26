@@ -23,6 +23,19 @@ def formatar_bytes(n: float) -> str:
     return f"{n} B"
 
 
+def formatar_duracao(segundos: float | None) -> str:
+    if segundos is None:
+        return "calculando..."
+    segundos = int(round(segundos))
+    if segundos < 60:
+        return f"{segundos} s"
+    minutos, s = divmod(segundos, 60)
+    if minutos < 60:
+        return f"{minutos} min {s:02d} s"
+    horas, minutos = divmod(minutos, 60)
+    return f"{horas} h {minutos:02d} min"
+
+
 def numero(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 

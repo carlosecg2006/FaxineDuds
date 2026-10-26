@@ -36,6 +36,12 @@ um conceito por vez, sem enrolação.
 7. Nunca formatar nenhum disco, pendrive ou cartão.
 8. Todo arquivo no índice tem, desde a Fase 1, os campos `aparelho`
    (pc, hd_externo, celular, nuvem...) e `conectado` (sim/não).
+9. Organizar só mexe em arquivos soltos nas pastas do usuário. Nunca em
+   pastas bloqueadas, pastas sincronizadas com nuvem (OneDrive, Google
+   Drive, Dropbox... — mover para fora APAGA da nuvem) nem dentro de
+   pastas-bloco (projetos e programas: .git, package.json, .sln, .exe com
+   DLLs, saves de jogo...), que são tratadas como uma unidade.
+   Listas configuráveis em `config.py` (`BLOCO_*`, `NUVEM_*`).
 
 ## Regras para o Claude (desenvolvimento)
 As regras de bloqueio em `.claude/settings.json` só comparam o texto do
@@ -81,7 +87,7 @@ bloqueio não pegaria:
 | 1 | Scanner e índice | Concluída — varrer pastas e gravar no SQLite (com `aparelho` e `conectado`) |
 | 2 | Raio-X | Concluída — duplicados, arquivos pesados e lixo |
 | 3 | Quarentena e desfazer | Concluída — mover para `_quarentena` com diário de operações (ideia do fo-core) |
-| 4 | IA local | Descrever e classificar arquivos com Ollama; modo sem IA |
+| 4 | IA local | Concluída — descrever e classificar arquivos com Ollama; modo sem IA |
 | 5 | Interface | App gráfico em PySide6 |
 | 5B | Conversor de arquivos | Ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
@@ -175,7 +181,7 @@ bloqueio não pegaria:
   Arquivo em uso / sem permissão vira "falhou" na hora, sem mudar nada
   (`mensagem_de_erro` traduz os erros do Windows). `listar` mostra o espaço
   total e há quantos dias cada lote está lá. 95 testes.
-- Fase 4 — em andamento (ajustada para 4 GB de RAM). Feito: `ia.py` (cliente
+- Fase 4 — concluída (ajustada para 4 GB de RAM). `ia.py` (cliente
   só localhost; `avaliar_ia` confere RAM disponível vs. tamanho do modelo e
   cai para regras com aviso; `num_ctx` 1024, `num_thread` = todos os núcleos,
   `keep_alive` 30 s e `descarregar()` ao terminar), `memoria.py`,
@@ -186,7 +192,18 @@ bloqueio não pegaria:
   com diário e desfazer). Esquema v4. CLI: `ia status|descrever|arquivo|organizar`.
   Comparação em `docs/comparacao_modelos.md`: o 1.5b descreve melhor, mas
   derrubou a RAM disponível a 6 MB → não cabe com os programas abertos; o
-  0.5b cabe (mínimo de 139 MB). 165 testes.
-  Falta: os três acréscimos que o Carlos vai reenviar (estimativa de tempo e
-  prioridade, pastas-bloco, nunca organizar pastas de nuvem) e a demonstração
-  real do `ia organizar` na pasta_teste.
+  0.5b cabe (mínimo de 139 MB).
+  Acréscimos: estimativa de tempo medida nos 3 primeiros arquivos (sem contar
+  o aquecimento) e ordem Downloads → Área de Trabalho → Documentos → resto
+  (`config.PRIORIDADE_PASTAS`); "óbvio pelo nome, tipo e pasta" vai só por
+  regras (`descricoes.precisa_ia`, `obvio_pelo_nome`, `EXTENSOES_OBVIAS`);
+  `protecoes.py` (pastas-bloco, nuvem, bloqueadas — origem e destino).
+  Sugestão de pastas: o 1º nível vem SEMPRE das regras (tipo real) e a IA só
+  dá o "assunto" (na demo, o 0.5b com liberdade total mandou contrato e
+  currículo para "Imagens/Viagens"). Demo real em 26/10/2026: 55 arquivos
+  organizados e desfeitos (hash conferido); jogo, projeto e OneDrive intactos.
+  233 testes.
+  Pendente pequeno: o organizar deixa as pastas de origem vazias (o Raio-X
+  as lista); a demo deixou `Imagens`, `Outros`, `Textos` e duas subpastas de
+  `Documentos` vazias na pasta_teste (bug já corrigido, sobra antiga).
+- Próxima: Fase 5 — Interface PySide6.

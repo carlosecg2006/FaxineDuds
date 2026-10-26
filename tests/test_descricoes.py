@@ -20,15 +20,16 @@ def area(tmp_path):
     raiz = tmp_path / "pasta_teste"
     (raiz / "Faculdade").mkdir(parents=True)
     (raiz / "Fotos").mkdir()
-    (raiz / "Faculdade" / "resumo.txt").write_text(
+    (raiz / "Faculdade" / "Novo Documento.txt").write_text(
         "Resumo de Engenharia de Software. " * 200 + "SEGREDO_DO_FIM", encoding="utf-8")
-    (raiz / "Faculdade" / "tcc.docx").write_bytes(bytes_zip({
+    (raiz / "Faculdade" / "documento1.docx").write_bytes(bytes_zip({
         "[Content_Types].xml": b'<Types><Override ContentType="application/vnd.openxmlformats-'
                                b'officedocument.wordprocessingml.document.main+xml"/></Types>',
         "word/document.xml": b"<w:t>Trabalho de Conclusao de Curso sobre redes</w:t>"}))
     (raiz / "Fotos" / "praia.png").write_bytes(bytes_png())
     (raiz / "filme.bin").write_bytes(DESCONHECIDO)  # tipo desconhecido
     (raiz / "musica.zip").write_bytes(bytes_zip({"a.txt": b"x"}))  # óbvio: compactado
+    (raiz / "Faculdade" / "resumo_redes.txt").write_text("TCP e UDP", encoding="utf-8")  # óbvio pelo nome
     return raiz
 
 
@@ -48,20 +49,96 @@ def _linha(indice, caminho):
 def test_regras_resolvem_o_obvio_e_ia_so_o_revisar(escaneada, indice):
     ia = ClienteFalso()
     p = descrever(indice, escaneada, ia, **SEM_ESPERA)
-    assert p.por_regras == 5  # todos ganham descrição por regras primeiro
-    assert p.total == 3  # só resumo.txt, tcc.docx e filme.bin (desconhecido) vão para a IA
+    assert p.por_regras == 6  # todos ganham descrição por regras primeiro
+    assert p.total == 3  # só Novo Documento.txt, documento1.docx e filme.bin (desconhecido) vão para a IA
     perguntados = " ".join(ia.prompts)
-    assert "praia.png" not in perguntados and "musica.zip" not in perguntados
+    for obvio in ("praia.png", "musica.zip", "resumo_redes.txt"):
+        assert obvio not in perguntados
     assert _linha(indice, escaneada / "Fotos" / "praia.png")["revisar"] == 0
-    assert _linha(indice, escaneada / "Faculdade" / "resumo.txt")["descricao_origem"] == "ia"
+    assert _linha(indice, escaneada / "Faculdade" / "resumo_redes.txt")["revisar"] == 0
+    assert _linha(indice, escaneada / "Faculdade" / "Novo Documento.txt")["descricao_origem"] == "ia"
 
 
-def test_precisa_ia():
-    assert precisa_ia({"tamanho": 10, "categoria": "texto", "tipo_real": "texto"})
-    assert precisa_ia({"tamanho": 10, "categoria": "documento", "tipo_real": "pdf"})
-    assert precisa_ia({"tamanho": 10, "categoria": "outro", "tipo_real": "desconhecido"})
-    assert not precisa_ia({"tamanho": 10, "categoria": "imagem", "tipo_real": "png"})
-    assert not precisa_ia({"tamanho": 0, "categoria": "texto", "tipo_real": "vazio"})
+def _l(caminho, categoria="texto", tipo="texto", tamanho=10):
+    ext = caminho.rsplit(".", 1)[-1].lower() if "." in caminho.rsplit("/", 1)[-1] else ""
+    return {"caminho": caminho, "categoria": categoria, "tipo_real": tipo, "tamanho": tamanho, "extensao": ext}
+
+
+@pytest.mark.parametrize("caminho, categoria, tipo, precisa", [
+    ("C:/u/Downloads/Novo documento (2).txt", "texto", "texto", True),   # nome genérico
+    ("C:/u/Downloads/scan_0001.pdf", "documento", "pdf", True),
+    ("C:/u/Documentos/documento1.docx", "documento", "docx", True),
+    ("C:/u/Faculdade/resumo_redes.txt", "texto", "texto", False),        # nome + pasta explicam
+    ("C:/u/Downloads/boleto_luz_outubro.pdf", "documento", "pdf", False),
+    ("C:/u/Financas/boleto.pdf", "documento", "pdf", False),             # pasta ajuda o nome
+    ("C:/u/Downloads/script.py", "texto", "texto", False),                # óbvio pela extensão
+    ("C:/u/Downloads/servidor.log", "texto", "texto", False),
+    ("C:/u/Downloads/IMG_0001.png", "imagem", "png", False),              # óbvio pelo tipo
+    ("C:/u/Downloads/dados.bin", "outro", "desconhecido", True),          # desconhecido: IA
+])
+def test_precisa_ia(caminho, categoria, tipo, precisa):
+    assert precisa_ia(_l(caminho, categoria, tipo)) is precisa
+
+
+def test_fila_antiga_e_reavaliada_com_as_regras_novas(escaneada, indice):
+    foto = indice.buscar(str(escaneada / "Fotos" / "praia.png"))
+    indice.gravar_descricao(foto["id"], "antiga", "regras", True, "ontem")  # marcada por regra antiga
+    indice.confirmar()
+    ia = ClienteFalso()
+    descrever(indice, escaneada, ia, **SEM_ESPERA)
+    assert indice.buscar(str(escaneada / "Fotos" / "praia.png"))["revisar"] == 0
+    assert not any("praia.png" in p for p in ia.prompts)
+
+
+def test_vazio_nunca_precisa_ia():
+    assert not precisa_ia(_l("C:/u/Downloads/x.txt", tipo="vazio", tamanho=0))
+
+
+@pytest.mark.parametrize("caminho, nivel", [
+    ("C:/Users/c/Downloads/a.txt", 0), ("C:/Users/c/Desktop/a.txt", 1),
+    ("C:/Users/c/Área de Trabalho/a.txt", 1), ("C:/Users/c/Documents/x/a.txt", 2),
+    ("C:/Users/c/Documentos/a.txt", 2), ("C:/Users/c/Videos/a.txt", 3),
+])
+def test_prioridade(caminho, nivel):
+    from faxineiro.descricoes import prioridade
+
+    assert prioridade(caminho) == nivel
+
+
+def test_ia_segue_a_ordem_de_prioridade(tmp_path, indice):
+    raiz = tmp_path / "usuario"
+    for pasta in ("Videos", "Documentos", "Desktop", "Downloads"):
+        (raiz / pasta).mkdir(parents=True)
+        (raiz / pasta / "scan_01.txt").write_text(pasta, encoding="utf-8")
+    escanear(raiz, indice)
+    ia = ClienteFalso()
+    descrever(indice, raiz, ia, **SEM_ESPERA)
+    ordem = [next(p for p in ("Downloads", "Desktop", "Documentos", "Videos") if f"Pasta: {p}" in pr)
+             for pr in ia.prompts]
+    assert ordem == ["Downloads", "Desktop", "Documentos", "Videos"]
+
+
+def test_estimativa_medida_nos_primeiros(tmp_path, indice):
+    raiz = tmp_path / "x"
+    raiz.mkdir()
+    for i in range(10):
+        (raiz / f"scan_{i:02d}.txt").write_text(f"conteúdo {i}", encoding="utf-8")
+    escanear(raiz, indice)
+    agora = [0.0]
+
+    class IALenta(ClienteFalso):  # 1ª chamada 30 s (carrega o modelo), as outras 2 s
+        def gerar(self, prompt, **kw):
+            agora[0] += 30 if not self.chamadas else 2
+            return super().gerar(prompt, **kw)
+
+    fases = []
+    p = descrever(indice, raiz, IALenta(), relogio=lambda: agora[0],
+                  ao_progredir=lambda p: fases.append((p.fase, p.faltam, p.estimativa_s)), **SEM_ESPERA)
+    assert fases[0] == ("inicio", 10, None)  # antes da IA: quantos faltam, sem estimativa ainda
+    estimativa = next(f for f in fases if f[0] == "estimativa")
+    # 1º arquivo (30 s, carrega o modelo) fica fora da média; os outros levam 2 s cada
+    assert estimativa[1] == 6 and estimativa[2] == pytest.approx(12.0)
+    assert p.tempos == [2.0] * 9
 
 
 def test_so_regras_nao_chama_a_ia(escaneada, indice):
@@ -73,12 +150,12 @@ def test_so_regras_nao_chama_a_ia(escaneada, indice):
 def test_prompt_tem_nome_pasta_e_so_o_comeco(escaneada, indice):
     ia = ClienteFalso()
     descrever(indice, escaneada, ia, **SEM_ESPERA)
-    prompt = next(p for p in ia.prompts if "resumo.txt" in p)
-    assert "Nome: resumo.txt" in prompt and "Pasta: Faculdade" in prompt
+    prompt = next(p for p in ia.prompts if "Novo Documento.txt" in p)
+    assert "Nome: Novo Documento.txt" in prompt and "Pasta: Faculdade" in prompt
     assert "Resumo de Engenharia de Software" in prompt
     assert "SEGREDO_DO_FIM" not in prompt  # o arquivo nunca vai inteiro
     assert len(prompt) < 2500
-    assert "Trabalho de Conclusao de Curso" in next(p for p in ia.prompts if "tcc.docx" in p)
+    assert "Trabalho de Conclusao de Curso" in next(p for p in ia.prompts if "documento1.docx" in p)
 
 
 def test_desconhecido_vai_so_com_metadados(escaneada, indice):
@@ -109,7 +186,7 @@ def test_memoria_cai_no_meio_para_a_ia(tmp_path, indice):
     raiz = tmp_path / "muitos"
     raiz.mkdir()
     for i in range(30):
-        (raiz / f"nota_{i:02d}.txt").write_text(f"nota {i}", encoding="utf-8")
+        (raiz / f"scan_{i:02d}.txt").write_text(f"conteúdo {i}", encoding="utf-8")
     escanear(raiz, indice)
     leituras = iter([3000 * MB] + [100 * MB] * 10)
     ia = ClienteFalso(ja_carregado=False, falhar=lambda p: True)  # falha => nunca "usou" a IA
@@ -141,10 +218,10 @@ def test_ollama_desligado_fica_tudo_para_revisar(escaneada, indice):
 
 
 def test_timeout_em_um_arquivo_so_ele_fica_para_revisar(escaneada, indice):
-    ia = ClienteFalso(falhar=lambda prompt: "tcc.docx" in prompt)
+    ia = ClienteFalso(falhar=lambda prompt: "documento1.docx" in prompt)
     p = descrever(indice, escaneada, ia, **SEM_ESPERA)
-    assert _linha(indice, escaneada / "Faculdade" / "tcc.docx")["revisar"] == 1
-    assert _linha(indice, escaneada / "Faculdade" / "resumo.txt")["descricao_origem"] == "ia"
+    assert _linha(indice, escaneada / "Faculdade" / "documento1.docx")["revisar"] == 1
+    assert _linha(indice, escaneada / "Faculdade" / "Novo Documento.txt")["descricao_origem"] == "ia"
     assert any("demorou demais" in a for a in p.avisos)
 
 
@@ -152,7 +229,7 @@ def test_falhas_seguidas_desistem_da_ia(tmp_path, indice):
     raiz = tmp_path / "muitos"
     raiz.mkdir()
     for i in range(8):
-        (raiz / f"nota_{i}.txt").write_text(f"nota {i}", encoding="utf-8")
+        (raiz / f"scan_{i}.txt").write_text(f"conteúdo {i}", encoding="utf-8")
     escanear(raiz, indice)
     ia = ClienteFalso(falhar=lambda prompt: True)
     p = descrever(indice, raiz, ia, cfg=ConfigDescricao(max_falhas_seguidas=3), **SEM_ESPERA)
@@ -177,7 +254,7 @@ def test_segunda_rodada_nao_refaz(escaneada, indice):
 
 def test_arquivo_alterado_e_refeito(escaneada, indice):
     descrever(indice, escaneada, ClienteFalso(), **SEM_ESPERA)
-    alvo = escaneada / "Faculdade" / "resumo.txt"
+    alvo = escaneada / "Faculdade" / "Novo Documento.txt"
     alvo.write_text("conteúdo totalmente novo", encoding="utf-8")
     st = alvo.stat()
     os.utime(alvo, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
@@ -192,17 +269,17 @@ def test_pausar_e_continuar_de_onde_parou(tmp_path, indice):
     raiz = tmp_path / "lote"
     raiz.mkdir()
     for i in range(25):
-        (raiz / f"arq_{i:02d}.txt").write_text(f"texto {i}", encoding="utf-8")
+        (raiz / f"scan_{i:02d}.txt").write_text(f"texto {i}", encoding="utf-8")
     escanear(raiz, indice)
     cfg = ConfigDescricao(tamanho_lote=10)
     lotes = []
     p1 = descrever(indice, raiz, ClienteFalso(), cfg=cfg, parar=lambda: len(lotes) >= 1,
-                   ao_progredir=lambda p: lotes.append(p.feitos), **SEM_ESPERA)
+                   ao_progredir=lambda p: p.fase == "lote" and lotes.append(p.feitos), **SEM_ESPERA)
     assert p1.pausado and p1.por_ia == 10  # parou depois do 1º lote gravado
     ia = ClienteFalso()
     p2 = descrever(indice, raiz, ia, cfg=cfg, **SEM_ESPERA)
     assert p2.total == 15 and p2.por_ia == 15 and not p2.pausado
-    assert not any("arq_00" in pr for pr in ia.prompts)  # não refez os já descritos
+    assert not any("scan_00" in pr for pr in ia.prompts)  # não refez os já descritos
 
 
 def test_limite_por_rodada(escaneada, indice):
@@ -225,7 +302,7 @@ def test_descrever_um_arquivo_mesmo_obvio(escaneada, indice):
 
 def test_descrever_um_arquivo_com_pouca_memoria(escaneada, indice):
     ia = ClienteFalso(ja_carregado=False)
-    p = descrever_arquivo(indice, escaneada / "Faculdade" / "resumo.txt", ia, memoria=POUCA_MEMORIA)
+    p = descrever_arquivo(indice, escaneada / "Faculdade" / "Novo Documento.txt", ia, memoria=POUCA_MEMORIA)
     assert ia.chamadas == [] and p.por_regras == 1
     assert any("Pouca memória" in a for a in p.avisos)
 
@@ -258,4 +335,4 @@ def test_resposta_comprida_e_cortada():
 
 def test_sem_cliente_funciona(escaneada, indice):
     p = descrever(indice, escaneada, None, **SEM_ESPERA)
-    assert p.por_regras == 5 and p.revisar == 3
+    assert p.por_regras == 6 and p.revisar == 3

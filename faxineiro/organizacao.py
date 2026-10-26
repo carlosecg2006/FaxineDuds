@@ -18,6 +18,7 @@ from .descricoes import ClienteIA
 from .ia import IAIndisponivel, avaliar_ia
 from .indice import Indice
 from .memoria import memoria_disponivel
+from .protecoes import Protecoes
 from .quarentena import Plano, Quarentena
 from .raiox import prefixo_da_pasta
 
@@ -49,26 +50,65 @@ def sanear_pasta(texto: str | None) -> str | None:
     return "/".join(partes) or None
 
 
+def pasta_principal(linha: sqlite3.Row) -> str:
+    """O 1º nível vem SEMPRE das regras, pelo tipo real (onde as regras não erram)."""
+    return PASTA_POR_CATEGORIA.get(linha["categoria"], "Outros")
+
+
 def pasta_por_regras(linha: sqlite3.Row) -> str:
     """Sem IA: <Categoria>/<ano da modificação>, ex.: Imagens/2026."""
     ano = (linha["modificado_em"] or "")[:4] or "sem_data"
-    return f"{PASTA_POR_CATEGORIA.get(linha['categoria'], 'Outros')}/{ano}"
+    return f"{pasta_principal(linha)}/{ano}"
+
+
+# Assuntos que não ajudam a agrupar (ou que só repetem a categoria).
+_ASSUNTOS_INUTEIS = {
+    "arquivo", "arquivos", "documento", "documentos", "geral", "outros", "diversos", "misc", "pasta",
+    "categoria", "subcategoria", "assunto", "texto", "textos", "imagem", "imagens", "foto", "fotos",
+    "video", "vídeo", "videos", "vídeos", "audio", "áudio", "audios", "áudios", "programa", "programas",
+    "compactado", "compactados", "pessoal computador",
+}
+
+
+_PALAVRAS_DE_LIGACAO = {"de", "da", "do", "das", "dos", "e", "em", "um", "uma", "sua", "seu", "para", "com", "a", "o"}
+
+
+def sanear_assunto(texto: str | None) -> str | None:
+    """Um nome de pasta só (1 nível), curto e útil; None se não servir."""
+    caminho = sanear_pasta(texto)
+    if not caminho:
+        return None
+    assunto = caminho.split("/")[-1]
+    # "Imagens - Viagens" → "Viagens"; "Reunião de TCC - Novo Documento" → "Reunião de TCC"
+    pedacos = [p.strip() for p in assunto.split(" - ") if p.strip().casefold() not in _ASSUNTOS_INUTEIS]
+    if not pedacos:
+        return None
+    palavras = pedacos[0].split()[:3]  # no máximo 3 palavras
+    while palavras and palavras[-1].casefold() in _PALAVRAS_DE_LIGACAO:  # "Dados de uma" → "Dados"
+        palavras.pop()
+    if not palavras or palavras[0].casefold() in ("arquivo", "arquivos", "modificação", "novo", "nova"):
+        return None  # "Arquivos de texto", "Novo Arquivo": não diz o assunto
+    assunto = " ".join(palavras)[:30].strip()
+    if assunto.casefold() in _ASSUNTOS_INUTEIS or len(assunto) < 3 or assunto.isdigit():
+        return None
+    return assunto[0].upper() + assunto[1:]
 
 
 def montar_prompt_pasta(linha: sqlite3.Row, ja_usadas: list[str]) -> str:
-    usadas = ", ".join(ja_usadas[:30]) if ja_usadas else "(nenhuma ainda)"
+    """A IA só escolhe o ASSUNTO (2º nível). Modelos pequenos erram menos com uma pergunta menor.
+
+    Sem lista de assuntos já usados: no teste real, o 0.5b copiava a lista em vez de pensar.
+    A coerência vem depois, juntando assuntos iguais (ver `_unificar`)."""
+    principal = pasta_principal(linha)
     return "\n".join([
-        "Você organiza os arquivos de um computador pessoal em pastas.",
-        f"Escolha UMA pasta para o arquivo abaixo, com no máximo {MAX_NIVEIS} níveis "
-        '(exemplos: "Documentos/Faculdade", "Imagens/Viagens", "Finanças/Boletos").',
-        "Reutilize uma das pastas já usadas quando fizer sentido. Use nomes curtos em português.",
-        'Responda SOMENTE em JSON, assim: {"pasta": "Categoria/Subcategoria"}',
+        "Você organiza arquivos de um computador pessoal.",
+        f"Este arquivo vai para a pasta '{principal}'. Dê um ASSUNTO curto (1 ou 2 palavras, em português)",
+        "para a subpasta, de acordo com o conteúdo descrito. Não repita o tipo do arquivo.",
+        'Exemplos de assuntos: "Faculdade", "Finanças", "Receitas", "Trabalho", "Casa".',
+        'Responda SOMENTE em JSON: {"assunto": "..."}',
         "",
-        f"Pastas já usadas: {usadas}",
         f"Arquivo: {linha['nome']}",
         f"Descrição: {linha['descricao'] or '(sem descrição)'}",
-        f"Tipo: {linha['tipo_real']} ({linha['categoria']})",
-        f"Modificado em: {(linha['modificado_em'] or '')[:10]}",
     ])
 
 
@@ -76,9 +116,19 @@ def _ler_json_pasta(resposta: str) -> str | None:
     try:
         dados = json.loads(resposta)
     except ValueError:
-        achado = re.search(r'"pasta"\s*:\s*"([^"]+)"', resposta)
+        achado = re.search(r'"(?:assunto|pasta)"\s*:\s*"([^"]+)"', resposta)
         return achado.group(1) if achado else None
-    return dados.get("pasta") if isinstance(dados, dict) else None
+    if not isinstance(dados, dict):
+        return None
+    return dados.get("assunto") or dados.get("pasta")
+
+
+def _unificar(sugestao: str, ja_usadas: list[str]) -> str:
+    """'Documentos/finanças' e 'Documentos/Finanças' viram a mesma pasta (a que já existia)."""
+    for existente in ja_usadas:
+        if existente.casefold() == sugestao.casefold():
+            return existente
+    return sugestao
 
 
 @dataclass
@@ -87,6 +137,7 @@ class ResultadoSugestao:
     por_ia: int = 0
     por_regras: int = 0
     sem_descricao: int = 0
+    protegidos: int = 0  # nuvem, pasta-bloco ou bloqueada: nem recebem sugestão
     pausado: bool = False
     avisos: list[str] = field(default_factory=list)
 
@@ -101,10 +152,21 @@ def sugerir_pastas(
     max_falhas_seguidas: int = 3,
     parar: Callable[[], bool] = lambda: False,
     memoria: Callable[[], int | None] = memoria_disponivel,
+    protecoes: Protecoes | None = None,
 ) -> ResultadoSugestao:
-    """Guarda em `pasta_sugerida` a pasta que cada arquivo deveria ter (relativa à `pasta`)."""
+    """Guarda em `pasta_sugerida` a pasta que cada arquivo deveria ter (relativa à `pasta`).
+
+    Arquivos protegidos (pasta da nuvem, pasta-bloco, bloqueada) nem recebem sugestão.
+    """
     r = ResultadoSugestao()
-    linhas = [l for l in indice.todos(prefixo_da_pasta(pasta)) if refazer or l["pasta_sugerida"] is None]
+    base = Path(pasta).resolve()
+    protecoes = protecoes or Protecoes()
+    linhas = []
+    for l in indice.todos(prefixo_da_pasta(base)):
+        if protecoes.motivo_para_nao_organizar(Path(l["caminho"]), base):
+            r.protegidos += 1
+        elif refazer or l["pasta_sugerida"] is None:
+            linhas.append(l)
     if not linhas:
         return r
     _, usar_ia, aviso = avaliar_ia(cliente, memoria)
@@ -124,8 +186,9 @@ def sugerir_pastas(
         if usar_ia:
             try:
                 resposta = cliente.gerar(montar_prompt_pasta(linha, ja_usadas), timeout=timeout,
-                                         formato_json=True, max_tokens=40)
-                sugestao = sanear_pasta(_ler_json_pasta(resposta))
+                                         formato_json=True, max_tokens=30)
+                assunto = sanear_assunto(_ler_json_pasta(resposta))
+                sugestao = _unificar(f"{pasta_principal(linha)}/{assunto}", ja_usadas) if assunto else None
                 falhas = 0
                 usou_ia = True
             except IAIndisponivel as erro:
@@ -149,16 +212,37 @@ def sugerir_pastas(
     return r
 
 
-def planejar_organizacao(indice: Indice, pasta: str | Path, quarentena: Quarentena) -> Plano:
-    """Plano (prévia) de mover cada arquivo para `pasta/<pasta_sugerida>/<nome>`."""
+def planejar_organizacao(
+    indice: Indice, pasta: str | Path, quarentena: Quarentena, protecoes: Protecoes | None = None
+) -> Plano:
+    """Plano (prévia) de mover cada arquivo SOLTO para `pasta/<pasta_sugerida>/<nome>`.
+
+    Fica de fora (e aparece em `plano.ignorados` com o motivo): pasta bloqueada, pasta da
+    nuvem (mover para fora apagaria da nuvem) e tudo dentro de pastas-bloco (projetos, programas,
+    jogos), que são tratadas como uma unidade.
+    """
     base = Path(pasta).resolve()
+    protecoes = protecoes or Protecoes()
     movimentos = []
+    ignorados: list[tuple[Path, str]] = []
     for linha in indice.todos(prefixo_da_pasta(base)):
+        origem = Path(linha["caminho"])
+        motivo = protecoes.motivo_para_nao_organizar(origem, base)
+        if motivo:
+            ignorados.append((origem, motivo))
+            continue
         if not linha["pasta_sugerida"]:
             continue
-        origem = Path(linha["caminho"])
         destino = base.joinpath(*linha["pasta_sugerida"].split("/")) / origem.name
         if origem.parent == destino.parent:
             continue  # já está na pasta sugerida
+        motivo_destino = protecoes.destino_proibido(destino, base) or (
+            # não colocar arquivos soltos DENTRO de um projeto/jogo existente
+            protecoes.bloco_que_contem(destino, base) and "destino dentro de pasta-bloco")
+        if motivo_destino:
+            ignorados.append((origem, motivo_destino))
+            continue
         movimentos.append((origem, destino))
-    return quarentena.planejar_organizar(movimentos, f"organizar {base.name} ({datetime.now():%d/%m %H:%M})")
+    plano = quarentena.planejar_organizar(movimentos, f"organizar {base.name} ({datetime.now():%d/%m %H:%M})")
+    plano.ignorados = ignorados
+    return plano

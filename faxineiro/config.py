@@ -52,6 +52,34 @@ IA_FATOR_MEMORIA = 1.2  # o modelo ocupa ~20% a mais que o arquivo dele, carrega
 IA_MARGEM_MEMORIA = 250 * 1024 * 1024  # folga para o Windows e os outros programas
 
 
+# Ordem em que a IA trabalha: primeiro Downloads, depois Área de Trabalho, Documentos e o resto.
+PRIORIDADE_PASTAS: tuple[tuple[str, ...], ...] = (
+    ("downloads",),
+    ("desktop", "área de trabalho", "area de trabalho"),
+    ("documents", "documentos", "meus documentos"),
+)
+
+# "Pastas-bloco": projetos e programas. Tratadas como uma unidade — nunca se organiza o que está dentro.
+BLOCO_MARCADORES: tuple[str, ...] = (  # se a pasta tem um destes (arquivo ou pasta), é bloco
+    ".git", ".hg", ".svn", "package.json", "pyproject.toml", "setup.py", "requirements.txt",
+    "Pipfile", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "CMakeLists.txt", "Makefile",
+    "composer.json", "Gemfile", "pubspec.yaml", "node_modules", ".venv", "venv", "pyvenv.cfg",
+    ".idea", ".vscode", "steam_appid.txt",
+)
+BLOCO_PADROES: tuple[str, ...] = ("*.sln", "*.csproj", "*.vcxproj", "*.xcodeproj", "*.sav", "*.save")
+BLOCO_NOMES_DE_PASTA: tuple[str, ...] = (  # a própria pasta, pelo nome, já é bloco
+    "Saved Games", "My Games", "SaveGames", "Saves", "steamapps", "node_modules", "site-packages",
+)
+
+# Pastas sincronizadas com a nuvem: nunca organizar (mover para fora APAGA o arquivo da nuvem).
+NUVEM_NOMES: tuple[str, ...] = (
+    "OneDrive", "Google Drive", "GoogleDrive", "Meu Drive", "My Drive", "Dropbox",
+    "iCloudDrive", "iCloud Drive", "Box", "MEGA", "pCloud Drive",
+)
+NUVEM_PREFIXOS: tuple[str, ...] = ("OneDrive - ",)  # ex.: "OneDrive - Faculdade"
+NUVEM_VARIAVEIS: tuple[str, ...] = ("OneDrive", "OneDriveConsumer", "OneDriveCommercial")
+
+
 # Raio-X (Fase 2): o que conta como arquivo temporário / lixo.
 TEMP_EXTENSOES: set[str] = {"tmp", "temp", "crdownload", "part", "partial"}
 TEMP_PREFIXOS: tuple[str, ...] = ("~$",)  # rascunhos do Office
