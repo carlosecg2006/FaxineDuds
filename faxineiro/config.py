@@ -80,6 +80,12 @@ NUVEM_PREFIXOS: tuple[str, ...] = ("OneDrive - ",)  # ex.: "OneDrive - Faculdade
 NUVEM_VARIAVEIS: tuple[str, ...] = ("OneDrive", "OneDriveConsumer", "OneDriveCommercial")
 
 
+# Conversor (Fase 5B). ffmpeg baixado para D:\FaxineDuds\externos (nada instalado no Windows).
+PASTA_EXTERNOS = RAIZ_PROJETO / "externos"
+FFMPEG_THREADS = 2  # PC com 4 GB: não deixar o ffmpeg tomar o PC inteiro
+IMAGEM_MAX_PIXELS = 120_000_000  # acima disso o Pillow recusa (evita estourar a RAM)
+
+
 # Raio-X (Fase 2): o que conta como arquivo temporário / lixo.
 TEMP_EXTENSOES: set[str] = {"tmp", "temp", "crdownload", "part", "partial"}
 TEMP_PREFIXOS: tuple[str, ...] = ("~$",)  # rascunhos do Office

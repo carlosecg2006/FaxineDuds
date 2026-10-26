@@ -8,6 +8,8 @@ dependencies = [
     "blake3>=1.0",
     "pypdf>=4.0",
     "PySide6-Essentials>=6.8",
+    "Pillow>=11",
+    "pillow-heif>=0.20",
 ]
 
 [project.optional-dependencies]

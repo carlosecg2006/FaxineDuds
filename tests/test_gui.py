@@ -279,7 +279,7 @@ def test_explorador_pede_confirmacao_para_abrir_programa(janela, monkeypatch, ar
 
 def test_explorador_menu_do_botao_direito(janela):
     nomes = [t for t, _ in janela.telas[1].acoes_do_menu()]
-    assert nomes == ["Abrir", "Mostrar na pasta", "Descrever com IA", "Mandar para quarentena…"]
+    assert nomes == ["Abrir", "Mostrar na pasta", "Descrever com IA", "Converter…", "Mandar para quarentena…"]
 
 
 def test_explorador_manda_para_quarentena(janela, amb, qtbot, monkeypatch, area):
@@ -304,6 +304,42 @@ def test_explorador_descreve_com_ia(janela, amb, qtbot, monkeypatch, area):
     _esperar_tarefa(qtbot, amb)
     atual = amb.leitura.buscar(str(area.resolve() / "Downloads" / "notas da aula.txt"))
     assert atual["descricao_origem"] == "ia"
+
+
+def test_dialogo_conversao_previa_e_sem_ffmpeg(area, qtbot):
+    from faxineiro.conversor import Ferramentas
+    from faxineiro.gui.conversao import DialogoConversao
+
+    d = DialogoConversao(area / "Fotos" / "praia.png", area, area, Ferramentas(None, None))
+    qtbot.addWidget(d)
+    formatos = [d.formato.itemData(i) for i in range(d.formato.count())]
+    assert "png" not in formatos and "jpg" in formatos
+    assert d.plano is not None and "Prévia" in d.previa.text() and "fica intacto" in d.previa.text()
+    d.substituir.setChecked(True)
+    assert d.plano.modo == "substituir" and "quarentena" in d.previa.text()
+
+    (area / "Downloads" / "filme.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42" + bytes(64))
+    d2 = DialogoConversao(area / "Downloads" / "filme.mp4", area, area, Ferramentas(None, None))
+    qtbot.addWidget(d2)
+    assert d2.plano is None and not d2.botoes.button(d2.botoes.StandardButton.Ok).isEnabled()
+    assert "ffmpeg" in d2.formato.itemText(0)
+
+
+def test_explorador_converte_imagem(janela, amb, qtbot, area):
+    exp = _explorador_em(janela, "Fotos")
+    linha = next(i for i in range(exp.modelo.rowCount()) if exp.modelo.linha(i)["nome"] == "praia.png")
+    exp.tabela.selectRow(linha)
+
+    def escolher(dialogo):
+        i = next(i for i in range(dialogo.formato.count()) if dialogo.formato.itemData(i) == "jpg")
+        dialogo.formato.setCurrentIndex(i)
+        return True
+
+    exp.converter(escolher=escolher)
+    _esperar_tarefa(qtbot, amb)
+    novo = area.resolve() / "Fotos" / "praia.jpg"
+    assert novo.exists() and (area / "Fotos" / "praia.png").exists()
+    assert amb.leitura.buscar(str(novo)) is not None  # entrou no índice
 
 
 def test_quarentena_esvazia_so_com_a_segunda_confirmacao(janela, amb, qtbot, monkeypatch, area):

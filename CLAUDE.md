@@ -76,7 +76,9 @@ bloqueio não pegaria:
 - Hash BLAKE3 para duplicados (tamanho → hash parcial → hash completo)
 - Ollama local: modelo configurável (`config.MODELO_IA`, padrão `qwen2.5:0.5b`;
   trocar com `--modelo` ou a variável `FAXINEIRO_MODELO`). Visão só se instalada.
-- Fase 5B: ffmpeg (vídeo/áudio), Pillow (imagens), LibreOffice (documentos)
+- Fase 5B: ffmpeg 9.0.2 "essentials" (gyan.dev) baixado para `externos\ffmpeg\`
+  (fora do Git, nada instalado no Windows; SHA-256 conferido), Pillow + pillow-heif
+  (imagens). LibreOffice (documentos) adiado.
 - Fase 8: rclone com remoto `crypt` (Google Drive por padrão, trocável)
 - Fase 10: FastAPI (servidor local) + PWA (versão web para o celular)
 - Testes com pytest; commit no Git ao fim de cada fase
@@ -90,7 +92,7 @@ bloqueio não pegaria:
 | 3 | Quarentena e desfazer | Concluída — mover para `_quarentena` com diário de operações (ideia do fo-core) |
 | 4 | IA local | Concluída — descrever e classificar arquivos com Ollama; modo sem IA |
 | 5 | Interface | Concluída — app gráfico em PySide6 |
-| 5B | Conversor de arquivos | Ver abaixo |
+| 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador (ver pendências abaixo) |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
@@ -99,7 +101,8 @@ bloqueio não pegaria:
 
 ### Fase 5B — Conversor de arquivos
 - Converter dentro do app: vídeo/áudio com ffmpeg, imagens com Pillow,
-  documentos com LibreOffice (modo sem janela).
+  documentos com LibreOffice (modo sem janela). **Documentos adiados**
+  (decisão do Carlos: LibreOffice ocupa ~1,2 GB e o C: tem só 2 GB livres).
 - Duas opções: criar um arquivo novo ou substituir o original. Ao
   substituir, o original vai para a `_quarentena`, com desfazer
   (regras 1 e 2: prévia e confirmação antes).
@@ -233,4 +236,18 @@ bloqueio não pegaria:
   Windows" (`gui/sistema.py`) e menu do botão direito (abrir, mostrar na pasta,
   descrever com IA, mandar para quarentena). 270 testes (os de interface rodam
   com `QT_QPA_PLATFORM=offscreen`, sem abrir janela).
-- Próxima: Fase 5B — Conversor de arquivos.
+- Fase 5B — concluída (sem documentos). `conversor.py`: `formatos_possiveis`,
+  `planejar_conversao` (prévia) e `converter` (Pillow ou ffmpeg). Converte para
+  um temporário oculto `.faxineiro-convertendo-*` na mesma pasta e só renomeia
+  no fim (cancelar/erro → temporário removido, original intacto); nunca
+  sobrescreve ("nome (2).ext"); confere o resultado (Pillow `verify`/`ffprobe`);
+  o novo arquivo entra no índice; modo substituir → original para a quarentena
+  depois de conferir (desfazer pela Fase 3). Extrair áudio copia o fluxo sem
+  recodificar quando dá (`CONTEINER_DO_CODEC`); mp4→mkv só troca o contêiner.
+  ffmpeg com `-threads 2`, prioridade baixa, sem janela, progresso por
+  `-progress pipe:1`. CLI: `python -m faxineiro converter ARQ --para FMT
+  [--substituir] [--so-previa]` e `--formatos`. Interface: Explorador → botão
+  direito → "Converter…" (`gui/conversao.py`). Demo real: PNG→JPG 0,1 s; extrair
+  áudio (cópia) 0,2 s; vídeo 20 s → WebM 9,9 s em modo substituir + desfazer.
+  294 testes (os de ffmpeg pulam se ele não for achado).
+- Próxima: Fase 6 — Pesquisa online (opcional).

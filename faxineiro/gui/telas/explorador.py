@@ -22,7 +22,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...conversor import converter as converter_arquivo
+from ...conversor import formatos_possiveis, localizar_ffmpeg
 from ...descricoes import descrever_arquivo
+from ..conversao import DialogoConversao
 from ...formato import formatar_bytes
 from ...ia import ClienteOllama, EnderecoNaoLocal
 from ..dialogos import confirmar_previa
@@ -246,9 +249,42 @@ class TelaExplorador(QWidget):
                     self.tabela.selectRow(i)
                     break
 
+    def converter(self, escolher=None) -> None:
+        """Abre o diálogo de conversão; converte em segundo plano (progresso + Cancelar)."""
+        l = self.selecionado()
+        if l is None:
+            return
+        ferramentas = localizar_ffmpeg()
+        if not formatos_possiveis(l["caminho"], ferramentas):
+            self.amb.mensagem("Por enquanto só converto imagens, áudio e vídeo.")
+            return
+        dialogo = DialogoConversao(Path(l["caminho"]), self.amb.pasta, self.amb.limite, ferramentas, self)
+        aceitou = escolher(dialogo) if escolher else dialogo.exec() == DialogoConversao.DialogCode.Accepted
+        if not aceitou or dialogo.plano is None:
+            return
+        plano = dialogo.plano
+
+        def trabalho(ctx):
+            with self.amb.abrir_indice() as indice:
+                return converter_arquivo(
+                    plano, indice=indice, quarentena=self.amb.quarentena(indice), parar=ctx.parar,
+                    ferramentas=ferramentas,
+                    ao_progredir=lambda f: ctx.avisar(int(f * 100), 100, f"Convertendo {plano.origem.name}: {f:.0%}"))
+
+        def pronto(r) -> None:
+            if r.cancelado:
+                self.amb.mensagem("Conversão cancelada: nada foi criado, o original está intacto.")
+                return
+            extra = f" Original na quarentena (lote {r.lote_id})." if r.lote_id else ""
+            self.amb.mensagem(f"Convertido em {r.segundos:.1f} s: {r.destino.name}.{extra} {r.aviso}")
+            self._recarregar_lista(str(r.destino))
+
+        self.amb.rodar("Convertendo", trabalho, pronto)
+
     def acoes_do_menu(self) -> list[tuple[str, object]]:
         return [("Abrir", self.abrir), ("Mostrar na pasta", self.mostrar_na_pasta),
-                ("Descrever com IA", self.descrever_com_ia), ("Mandar para quarentena…", self.mandar_para_quarentena)]
+                ("Descrever com IA", self.descrever_com_ia), ("Converter…", self.converter),
+                ("Mandar para quarentena…", self.mandar_para_quarentena)]
 
     def _menu(self, posicao) -> None:
         if not self.tabela.indexAt(posicao).isValid():

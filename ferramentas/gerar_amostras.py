@@ -126,6 +126,32 @@ def bytes_docx_com_texto(texto: str) -> bytes:
 PASTAS_VAZIAS = ["Projetos/antigo", "Projetos/vazio_com_sub/sub1/sub2", "Musicas"]
 
 
+def gerar_midia() -> int:
+    """Fase 5B: uma imagem PNG grande e um vídeo de verdade (se o ffmpeg estiver disponível)."""
+    import subprocess
+
+    from PIL import Image
+
+    from faxineiro.conversor import localizar_ffmpeg
+
+    criados = 0
+    imagem = PASTA_TESTE / "Fotos" / "print_tela.png"
+    if not imagem.exists():
+        im = Image.new("RGB", (1280, 720))
+        im.putdata([(x * 255 // 1280, y * 255 // 720, 140) for y in range(720) for x in range(1280)])
+        im.save(imagem)
+        criados += 1
+    video = PASTA_TESTE / "Videos" / "aula_gravada.mp4"
+    ferramentas = localizar_ffmpeg()
+    if not video.exists() and ferramentas.tem_ffmpeg:
+        subprocess.run([str(ferramentas.ffmpeg), "-hide_banner", "-loglevel", "error", "-n",
+                        "-f", "lavfi", "-i", "testsrc=duration=20:size=640x360:rate=25",
+                        "-f", "lavfi", "-i", "sine=frequency=440:duration=20",
+                        "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-shortest", str(video)], check=True)
+        criados += 1
+    return criados
+
+
 def main() -> int:
     criados = 0
     for relativo, dados in amostras().items():
@@ -138,6 +164,7 @@ def main() -> int:
         criados += 1
     for relativa in PASTAS_VAZIAS:
         (PASTA_TESTE / relativa).mkdir(parents=True, exist_ok=True)
+    criados += gerar_midia()
     total = sum(1 for _ in PASTA_TESTE.rglob("*") if _.is_file())
     print(f"Criados {criados} arquivos novos em {PASTA_TESTE} (total: {total}).")
     return 0

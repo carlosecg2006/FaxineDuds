@@ -16,7 +16,7 @@ from .config import (
     TOP_PESADOS,
     dentro_da_pasta_teste,
 )
-from . import cli_ia, cli_quarentena
+from . import cli_conversor, cli_ia, cli_quarentena
 from .formato import formatar_bytes
 from .formato import numero as _numero
 from .formato import relativo as _relativo
@@ -199,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cli_quarentena.registrar(sub)
     cli_ia.registrar(sub)
+    cli_conversor.registrar(sub)
 
     g = sub.add_parser("gui", help="abre a janela do Faxineiro")
     g.set_defaults(func=cmd_gui)
