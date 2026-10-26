@@ -6,11 +6,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QRadioButton,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -24,8 +26,8 @@ from ...formato import formatar_bytes, relativo
 from ..dialogos import confirmar_previa, rotulo_flexivel
 
 CAMINHO = Qt.ItemDataRole.UserRole
-MANTER = Qt.ItemDataRole.UserRole + 1  # duplicados: a cópia que fica
-HASH = Qt.ItemDataRole.UserRole + 2
+MANTER = Qt.ItemDataRole.UserRole + 1  # no item do grupo: caminho da cópia escolhida para ficar
+HASH = Qt.ItemDataRole.UserRole + 2  # no item do grupo: hash BLAKE3 de todas as cópias
 
 
 def _arvore(colunas: list[str]) -> QTreeWidget:
@@ -106,19 +108,23 @@ class TelaFaxina(QWidget):
         base = self.amb.pasta
         dup = r["dup"]
         self.duplicados.clear()
+        self._grupos_radio = []  # guarda os QButtonGroup (senão o Python os apaga)
         for n, g in enumerate(dup.grupos, 1):
-            grupo = QTreeWidgetItem(self.duplicados, [f"Grupo {n}: {len(g.arquivos)} cópias",
-                                                      f"libera {formatar_bytes(g.recuperavel)}", g.motivo])
+            grupo = QTreeWidgetItem(self.duplicados, [f"Grupo {n}: {len(g.arquivos)} cópias — {g.motivo}",
+                                                      f"libera {formatar_bytes(g.recuperavel)}", "Qual fica?"])
+            grupo.setData(0, HASH, g.hash_completo)
+            botoes = QButtonGroup(self.duplicados)  # só uma cópia "fica" por grupo
+            self._grupos_radio.append(botoes)
             for a in g.arquivos:
-                if a["id"] == g.manter["id"]:
-                    fica = QTreeWidgetItem(grupo, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]),
-                                                   "FICA (sugerido: o mais antigo)"])
-                    fica.setFlags(fica.flags() & ~Qt.ItemFlag.ItemIsEnabled)  # nunca dá para marcar
-                    continue
-                item = _item_marcavel(grupo, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]), "cópia"],
+                item = _item_marcavel(grupo, [relativo(a["caminho"], base), formatar_bytes(a["tamanho"]), ""],
                                       a["caminho"])
-                item.setData(0, MANTER, g.manter["caminho"])
-                item.setData(0, HASH, g.hash_completo)
+                sugerida = a["id"] == g.manter["id"]
+                radio = QRadioButton("fica (sugerida: a mais antiga)" if sugerida else "fica")
+                botoes.addButton(radio)
+                self.duplicados.setItemWidget(item, 2, radio)
+                radio.toggled.connect(lambda ligado, gr=grupo, it=item: ligado and self.escolher_manter(gr, it))
+                if sugerida:
+                    radio.setChecked(True)
             grupo.setExpanded(True)
         self.pesados.clear()
         for a in r["pesados"]:
@@ -142,12 +148,26 @@ class TelaFaxina(QWidget):
 
     # --- ação --------------------------------------------------------------------
 
+    def escolher_manter(self, grupo: QTreeWidgetItem, escolhida: QTreeWidgetItem) -> None:
+        """A cópia escolhida para ficar nunca pode ser marcada para a quarentena (sempre sobra uma)."""
+        grupo.setData(0, MANTER, escolhida.data(0, CAMINHO))
+        for j in range(grupo.childCount()):
+            item = grupo.child(j)
+            if item is escolhida:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                item.setData(0, Qt.ItemDataRole.CheckStateRole, None)  # some a caixinha: esta fica
+            else:
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                if item.data(0, Qt.ItemDataRole.CheckStateRole) is None:
+                    item.setCheckState(0, Qt.CheckState.Unchecked)
+
     def marcar_copias(self) -> None:
+        """Marca todas as cópias de cada grupo, menos a que fica."""
         for i in range(self.duplicados.topLevelItemCount()):
             grupo = self.duplicados.topLevelItem(i)
             for j in range(grupo.childCount()):
                 item = grupo.child(j)
-                if item.data(0, CAMINHO):
+                if item.data(0, CAMINHO) != grupo.data(0, MANTER):
                     item.setCheckState(0, Qt.CheckState.Checked)
 
     def marcados(self) -> list[QTreeWidgetItem]:
@@ -167,9 +187,17 @@ class TelaFaxina(QWidget):
     def montar_plano(self):
         """Prévia com o executor da Fase 3. Nos duplicados, a cópia que fica é conferida na hora de mover."""
         itens = self.marcados()
+        extra = {}
+        for i in itens:
+            grupo = i.parent()  # só os duplicados têm grupo
+            if grupo is not None and grupo.data(0, MANTER):
+                if i.data(0, CAMINHO) == grupo.data(0, MANTER):
+                    continue  # a cópia que fica nunca entra (proteção extra)
+                extra[Path(i.data(0, CAMINHO)).resolve()] = (grupo.data(0, MANTER), grupo.data(0, HASH))
+        caminhos = [i.data(0, CAMINHO) for i in itens
+                    if i.parent() is None or i.data(0, CAMINHO) != i.parent().data(0, MANTER)]
         q = self.amb.quarentena(self.amb.leitura)
-        plano = q.planejar_mover([i.data(0, CAMINHO) for i in itens], "faxina pela interface")
-        extra = {Path(i.data(0, CAMINHO)).resolve(): (i.data(0, MANTER), i.data(0, HASH)) for i in itens}
+        plano = q.planejar_mover(caminhos, "faxina pela interface")
         for passo in plano.passos:
             manter, hash_ = extra.get(passo.origem, (None, None))
             if manter:

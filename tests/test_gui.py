@@ -181,6 +181,131 @@ def test_faxina_nunca_inclui_a_copia_que_fica(janela, amb, qtbot, monkeypatch, a
         assert any(p.name == nome for p in area.rglob(nome) if "_quarentena" not in p.parts)
 
 
+def _grupo_de_fotos(faxina):
+    for i in range(faxina.duplicados.topLevelItemCount()):
+        g = faxina.duplicados.topLevelItem(i)
+        if g.child(0).data(0, Qt.ItemDataRole.UserRole).endswith(".png"):
+            return g
+    raise AssertionError("grupo das fotos não apareceu")
+
+
+def test_faxina_eu_escolho_qual_copia_fica(janela, amb, qtbot):
+    faxina = janela.telas[2]
+    faxina.analisar()
+    _esperar_tarefa(qtbot, amb)
+    grupo = _grupo_de_fotos(faxina)
+    sugerida = grupo.data(0, Qt.ItemDataRole.UserRole + 1)
+    outra = next(grupo.child(j) for j in range(grupo.childCount())
+                 if grupo.child(j).data(0, Qt.ItemDataRole.UserRole) != sugerida)
+    faxina.duplicados.itemWidget(outra, 2).setChecked(True)  # troco: agora fica a outra
+    nova = outra.data(0, Qt.ItemDataRole.UserRole)
+    assert grupo.data(0, Qt.ItemDataRole.UserRole + 1) == nova
+    assert not (outra.flags() & Qt.ItemFlag.ItemIsUserCheckable)  # a que fica não dá para marcar
+    faxina.marcar_copias()
+    plano = faxina.montar_plano()
+    origens = {str(p.origem) for p in plano.validos}
+    assert str(Path(sugerida).resolve()) in origens  # a antiga sugerida agora vai para a quarentena
+    assert str(Path(nova).resolve()) not in origens
+    passo = next(p for p in plano.validos if p.origem == Path(sugerida).resolve())
+    assert passo.manter == Path(nova) and passo.hash_esperado  # conferida por hash na hora de mover
+
+
+def test_faxina_a_que_fica_nunca_entra_mesmo_forcando(janela, amb, qtbot):
+    faxina = janela.telas[2]
+    faxina.analisar()
+    _esperar_tarefa(qtbot, amb)
+    for i in range(faxina.duplicados.topLevelItemCount()):
+        g = faxina.duplicados.topLevelItem(i)
+        for j in range(g.childCount()):
+            g.child(j).setCheckState(0, Qt.CheckState.Checked)  # força TODAS marcadas (até a que fica)
+    plano = faxina.montar_plano()
+    assert len(plano.validos) == 2  # 2 grupos de 2 cópias: sempre sobra uma em cada
+
+
+def test_faxina_move_com_a_copia_escolhida(janela, amb, qtbot, monkeypatch, area):
+    faxina = janela.telas[2]
+    faxina.analisar()
+    _esperar_tarefa(qtbot, amb)
+    grupo = _grupo_de_fotos(faxina)
+    sugerida = grupo.data(0, Qt.ItemDataRole.UserRole + 1)
+    outra = next(grupo.child(j) for j in range(grupo.childCount())
+                 if grupo.child(j).data(0, Qt.ItemDataRole.UserRole) != sugerida)
+    faxina.duplicados.itemWidget(outra, 2).setChecked(True)
+    escolhida = outra.data(0, Qt.ItemDataRole.UserRole)
+    faxina.marcar_copias()
+    monkeypatch.setattr("faxineiro.gui.telas.faxina.confirmar_previa", lambda *a, **k: True)
+    faxina.mandar_para_quarentena()
+    qtbot.waitUntil(lambda: len(amb.leitura.itens_na_quarentena()) == 2, timeout=20000)
+    _esperar_tarefa(qtbot, amb)
+    assert not Path(sugerida).exists()  # a sugerida foi para a quarentena
+    assert Path(escolhida).exists()  # a que EU escolhi ficou no lugar
+
+
+def _explorador_em(janela, nome_pasta):
+    exp = janela.telas[1]
+    raiz = exp.arvore.topLevelItem(0)
+    for i in range(raiz.childCount()):
+        if raiz.child(i).text(0) == nome_pasta:
+            exp.arvore.setCurrentItem(raiz.child(i))
+    return exp
+
+
+def test_explorador_abre_e_mostra_na_pasta(janela, monkeypatch):
+    abertos, mostrados = [], []
+    monkeypatch.setattr("faxineiro.gui.telas.explorador.abrir_arquivo", lambda c: abertos.append(c) or True)
+    monkeypatch.setattr("faxineiro.gui.telas.explorador.mostrar_na_pasta", lambda c: mostrados.append(c))
+    exp = _explorador_em(janela, "Fotos")
+    exp.tabela.selectRow(0)
+    assert exp.botao_mostrar.isEnabled()
+    exp.tabela.doubleClicked.emit(exp.tabela.currentIndex())  # clique duplo
+    exp.botao_mostrar.click()
+    assert abertos and abertos[0].endswith(".png")
+    assert mostrados == abertos
+
+
+def test_explorador_pede_confirmacao_para_abrir_programa(janela, monkeypatch, area, amb):
+    (area / "Downloads" / "instalar.exe").write_bytes(b"MZ" + bytes(300))
+    with Indice(amb.caminho_indice) as i:
+        escanear(area, i)
+    abertos = []
+    monkeypatch.setattr("faxineiro.gui.telas.explorador.abrir_arquivo", lambda c: abertos.append(c) or True)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    exp = _explorador_em(janela, "Downloads")
+    linha = next(i for i in range(exp.modelo.rowCount()) if exp.modelo.linha(i)["nome"] == "instalar.exe")
+    exp.tabela.selectRow(linha)
+    exp.abrir()
+    assert abertos == []  # disse "não": não executou
+
+
+def test_explorador_menu_do_botao_direito(janela):
+    nomes = [t for t, _ in janela.telas[1].acoes_do_menu()]
+    assert nomes == ["Abrir", "Mostrar na pasta", "Descrever com IA", "Mandar para quarentena…"]
+
+
+def test_explorador_manda_para_quarentena(janela, amb, qtbot, monkeypatch, area):
+    monkeypatch.setattr("faxineiro.gui.telas.explorador.confirmar_previa", lambda *a, **k: True)
+    exp = _explorador_em(janela, "Downloads")
+    linha = next(i for i in range(exp.modelo.rowCount()) if exp.modelo.linha(i)["nome"] == "cache.tmp")
+    exp.tabela.selectRow(linha)
+    exp.mandar_para_quarentena()
+    _esperar_tarefa(qtbot, amb)
+    assert not (area / "Downloads" / "cache.tmp").exists()
+    assert len(amb.leitura.itens_na_quarentena()) == 1
+
+
+def test_explorador_descreve_com_ia(janela, amb, qtbot, monkeypatch, area):
+    from .falsos import ClienteFalso
+
+    monkeypatch.setattr("faxineiro.gui.telas.explorador.ClienteOllama", lambda: ClienteFalso())
+    exp = _explorador_em(janela, "Downloads")
+    linha = next(i for i in range(exp.modelo.rowCount()) if exp.modelo.linha(i)["nome"] == "notas da aula.txt")
+    exp.tabela.selectRow(linha)
+    exp.descrever_com_ia()
+    _esperar_tarefa(qtbot, amb)
+    atual = amb.leitura.buscar(str(area.resolve() / "Downloads" / "notas da aula.txt"))
+    assert atual["descricao_origem"] == "ia"
+
+
 def test_quarentena_esvazia_so_com_a_segunda_confirmacao(janela, amb, qtbot, monkeypatch, area):
     q = amb.quarentena(amb.leitura)
     q.executar(q.planejar_mover([area / "Downloads" / "cache.tmp"]))

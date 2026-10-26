@@ -225,6 +225,12 @@ bloqueio não pegaria:
   nada do índice). Consultas paginadas no índice (`arquivos_da_pasta`,
   `subpastas`, `tamanho_por_pasta`, `buscar_texto`). Abrir: `Abrir Faxineiro.bat`
   ou `python -m faxineiro gui`. Capturas: `ferramentas/capturas_gui.py` →
-  `docs/capturas/`. Janela aberta: 82 MB de RAM (40 MB privados). 262 testes
-  (os de interface rodam com `QT_QPA_PLATFORM=offscreen`, sem abrir janela).
+  `docs/capturas/`. Janela aberta: 82 MB de RAM (40 MB privados).
+  Acréscimos: na Faxina o Carlos escolhe qual cópia fica em cada grupo (a
+  sugerida vem marcada; a que fica nunca entra no plano e é conferida por hash
+  antes de mover as outras). No Explorador: clique duplo abre no programa
+  padrão (programa .exe pede confirmação), botão "Mostrar no Explorador do
+  Windows" (`gui/sistema.py`) e menu do botão direito (abrir, mostrar na pasta,
+  descrever com IA, mandar para quarentena). 270 testes (os de interface rodam
+  com `QT_QPA_PLATFORM=offscreen`, sem abrir janela).
 - Próxima: Fase 5B — Conversor de arquivos.

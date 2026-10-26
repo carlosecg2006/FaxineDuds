@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPushButton,
     QSplitter,
     QTableView,
     QTreeWidget,
@@ -19,8 +22,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...descricoes import descrever_arquivo
 from ...formato import formatar_bytes
+from ...ia import ClienteOllama, EnderecoNaoLocal
+from ..dialogos import confirmar_previa
 from ..modelos import ModeloArquivos
+from ..sistema import abrir_arquivo, mostrar_na_pasta
 
 PAPEL_CAMINHO = Qt.ItemDataRole.UserRole
 
@@ -57,6 +64,9 @@ class TelaExplorador(QWidget):
         self.tabela.horizontalHeader().setStretchLastSection(True)
         self.tabela.setColumnWidth(0, 220)
         self.tabela.selectionModel().currentRowChanged.connect(self._arquivo_escolhido)
+        self.tabela.doubleClicked.connect(lambda _: self.abrir())
+        self.tabela.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tabela.customContextMenuRequested.connect(self._menu)
         cl.addWidget(self.tabela)
         divisor.addWidget(centro)
 
@@ -75,6 +85,10 @@ class TelaExplorador(QWidget):
             self.campos[nome] = rotulo
             self.form.addRow(nome + ":", rotulo)
         dl.addLayout(self.form)
+        self.botao_mostrar = QPushButton("Mostrar no Explorador do Windows")
+        self.botao_mostrar.setEnabled(False)
+        self.botao_mostrar.clicked.connect(self.mostrar_na_pasta)
+        dl.addWidget(self.botao_mostrar)
         dl.addStretch(1)
         divisor.addWidget(detalhes)
         divisor.setSizes([230, 600, 300])
@@ -146,9 +160,101 @@ class TelaExplorador(QWidget):
             self.campos[nome].setText(str(valor))
         self.miniatura.clear()
         self._caminho_mostrado = l["caminho"]
+        self.botao_mostrar.setEnabled(True)
         if l["categoria"] == "imagem":
             self.amb.miniaturas.pedir(l["caminho"])
 
     def _miniatura_chegou(self, caminho: str, pix: QPixmap) -> None:
         if caminho == self._caminho_mostrado:
             self.miniatura.setPixmap(pix)
+
+    # --- ações sobre o arquivo selecionado ------------------------------------------
+
+    def selecionado(self):
+        indice = self.tabela.currentIndex()
+        return self.modelo.linha(indice.row()) if indice.isValid() else None
+
+    def abrir(self) -> None:
+        """Clique duplo: abre no programa padrão. Programas pedem confirmação (abrir = executar)."""
+        l = self.selecionado()
+        if l is None:
+            return
+        if l["categoria"] == "executavel" and QMessageBox.question(
+                self, "Abrir programa", f"{l['nome']} é um programa: abrir vai EXECUTÁ-LO.\nContinuar?",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        if not abrir_arquivo(l["caminho"]):
+            self.amb.mensagem(f"O Windows não tem programa para abrir {l['nome']}.")
+
+    def mostrar_na_pasta(self) -> None:
+        l = self.selecionado()
+        if l is not None:
+            mostrar_na_pasta(l["caminho"])
+
+    def descrever_com_ia(self) -> None:
+        l = self.selecionado()
+        if l is None:
+            return
+        caminho = l["caminho"]
+        try:
+            cliente = ClienteOllama()
+        except EnderecoNaoLocal as erro:
+            QMessageBox.warning(self, "IA", str(erro))
+            return
+
+        def trabalho(ctx):
+            ctx.avisar(0, 0, f"Descrevendo {Path(caminho).name}")
+            with self.amb.abrir_indice() as indice:
+                return descrever_arquivo(indice, caminho, cliente)
+
+        def pronto(p) -> None:
+            avisos = " ".join(dict.fromkeys(p.avisos))
+            self.amb.mensagem(f"Descrição atualizada{' (por regras)' if p.por_regras else ''}. {avisos}")
+            self._recarregar_lista(caminho)
+
+        self.amb.rodar("Descrevendo com IA", trabalho, pronto)
+
+    def mandar_para_quarentena(self) -> None:
+        l = self.selecionado()
+        if l is None:
+            return
+        plano = self.amb.quarentena(self.amb.leitura).planejar_mover([l["caminho"]], "explorador")
+        if not confirmar_previa(plano, self.amb.pasta, "mandar para a quarentena", self):
+            return
+
+        def trabalho(ctx):
+            with self.amb.abrir_indice() as indice:
+                return self.amb.quarentena(indice).executar(plano, parar=ctx.parar)
+
+        def pronto(r) -> None:
+            if r.falhas:
+                QMessageBox.warning(self, "Quarentena", r.falhas[0][1])
+            else:
+                self.amb.mensagem(f"{l['nome']} foi para a quarentena (lote {r.lote_id}); dá para desfazer.")
+            self._recarregar_lista()
+
+        self.amb.rodar("Mandando para a quarentena", trabalho, pronto)
+
+    def _recarregar_lista(self, selecionar: str | None = None) -> None:
+        if self.busca.text().strip():
+            self._buscar()
+        else:
+            self._pasta_escolhida(self.arvore.currentItem())
+        if selecionar:
+            for i in range(self.modelo.rowCount()):
+                if self.modelo.linha(i)["caminho"] == selecionar:
+                    self.tabela.selectRow(i)
+                    break
+
+    def acoes_do_menu(self) -> list[tuple[str, object]]:
+        return [("Abrir", self.abrir), ("Mostrar na pasta", self.mostrar_na_pasta),
+                ("Descrever com IA", self.descrever_com_ia), ("Mandar para quarentena…", self.mandar_para_quarentena)]
+
+    def _menu(self, posicao) -> None:
+        if not self.tabela.indexAt(posicao).isValid():
+            return
+        self.tabela.selectRow(self.tabela.indexAt(posicao).row())
+        menu = QMenu(self)
+        for texto, funcao in self.acoes_do_menu():
+            menu.addAction(texto, funcao)
+        menu.exec(self.tabela.viewport().mapToGlobal(posicao))
