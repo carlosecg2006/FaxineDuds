@@ -99,5 +99,13 @@ bloqueio não pegaria:
 - Atualizar a seção "Estado atual" abaixo.
 
 ## Estado atual
-Fase 0 — concluída (estudo em `docs/estudo.md`; clones de referência em
-`referencias/`, fora do Git). Próxima: Fase 1 — Scanner e índice.
+- Fase 0 — concluída (estudo em `docs/estudo.md`; clones de referência em
+  `referencias/`, fora do Git).
+- Fase 1 — concluída. Pacote `faxineiro/`: `config.py` (bloqueios, trava da
+  pasta_teste), `tipos.py` (tipo real por conteúdo, via puremagic),
+  `indice.py` (SQLite em `dados/indice.sqlite`, esquema v1, WAL),
+  `scanner.py` (incremental por tamanho + data de modificação, progresso por
+  callback). CLI: `.venv\Scripts\python -m faxineiro escanear`. Amostras:
+  `ferramentas/gerar_amostras.py`. 30 testes em `tests/` (pytest).
+  Colunas `hash_parcial`/`hash_completo` já existem, vazias.
+- Próxima: Fase 2 — Raio-X (duplicados, pesados, lixo).

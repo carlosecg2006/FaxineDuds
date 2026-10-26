@@ -1,1 +1,7 @@
 ﻿referencias/
+.venv/
+dados/
+pasta_teste/
+__pycache__/
+.pytest_cache/
+*.pyc

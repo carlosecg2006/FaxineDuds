@@ -1,0 +1,15 @@
+[project]
+name = "faxineiro"
+version = "0.1.0"
+description = "Organizador pessoal de arquivos com IA local"
+requires-python = ">=3.11"
+dependencies = [
+    "puremagic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
