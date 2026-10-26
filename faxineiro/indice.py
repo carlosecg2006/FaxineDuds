@@ -6,7 +6,15 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSAO_ESQUEMA = 1
+VERSAO_ESQUEMA = 2
+
+# Migrações aplicadas em ordem: a chave é a versão que o banco passa a ter.
+_MIGRACOES: dict[int, str] = {
+    2: """
+    ALTER TABLE arquivos ADD COLUMN hash_em TEXT;
+    CREATE INDEX IF NOT EXISTS idx_arquivos_hash ON arquivos (hash_completo);
+    """,
+}
 
 _ESQUEMA = """
 CREATE TABLE IF NOT EXISTS arquivos (
@@ -78,7 +86,10 @@ class Indice:
         versao = self.con.execute("PRAGMA user_version").fetchone()[0]
         if versao > VERSAO_ESQUEMA:
             raise RuntimeError(f"Índice criado por versão mais nova do Faxineiro (esquema {versao}).")
-        self.con.executescript(_ESQUEMA)
+        self.con.executescript(_ESQUEMA)  # cria as tabelas da versão 1, se faltarem
+        for nova in range(max(versao, 1) + 1, VERSAO_ESQUEMA + 1):
+            self.con.executescript(_MIGRACOES[nova])
+            self.con.execute(f"PRAGMA user_version = {nova}")
         self.con.execute(f"PRAGMA user_version = {VERSAO_ESQUEMA}")
         self.con.commit()
 
@@ -139,7 +150,7 @@ class Indice:
                 modificado_ns = excluded.modificado_ns, tipo_real = excluded.tipo_real,
                 categoria = excluded.categoria, extensao_confere = excluded.extensao_confere,
                 aparelho = excluded.aparelho, conectado = excluded.conectado,
-                hash_parcial = NULL, hash_completo = NULL,
+                hash_parcial = NULL, hash_completo = NULL, hash_em = NULL,
                 visto_em = excluded.visto_em, indexado_em = excluded.indexado_em
             """,
             (r.caminho, r.pasta_raiz, r.nome, r.extensao, r.tamanho, r.criado_em,
@@ -169,6 +180,76 @@ class Indice:
 
     def contar(self) -> int:
         return self.con.execute("SELECT COUNT(*) FROM arquivos").fetchone()[0]
+
+    # --- consultas do Raio-X (Fase 2) --------------------------------------
+    # `prefixo` é a pasta com separador no fim (ex.: "D:\\x\\"), para pegar subpastas.
+
+    def foi_escaneada(self, pasta: str) -> bool:
+        """True se `pasta` (ou uma pasta acima dela) já teve varredura completa."""
+        alvo = Path(pasta)
+        for (raiz,) in self.con.execute("SELECT DISTINCT pasta_raiz FROM varreduras WHERE fim IS NOT NULL"):
+            r = Path(raiz)
+            if alvo == r or r in alvo.parents:
+                return True
+        return False
+
+    def candidatos_duplicados(self, prefixo: str) -> list[sqlite3.Row]:
+        """Arquivos não vazios que dividem o tamanho com pelo menos outro (etapa 1)."""
+        return self.con.execute(
+            """
+            WITH daqui AS (
+                SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho > 0
+            )
+            SELECT * FROM daqui
+            WHERE tamanho IN (SELECT tamanho FROM daqui GROUP BY tamanho HAVING COUNT(*) > 1)
+            ORDER BY tamanho DESC, caminho
+            """,
+            (len(prefixo), prefixo),
+        ).fetchall()
+
+    def gravar_hashes(self, arquivo_id: int, parcial: str | None, completo: str | None, agora: str) -> None:
+        self.con.execute(
+            """UPDATE arquivos SET hash_parcial = COALESCE(?, hash_parcial),
+                   hash_completo = COALESCE(?, hash_completo), hash_em = ?
+               WHERE id = ?""",
+            (parcial, completo, agora, arquivo_id),
+        )
+
+    def maiores(self, prefixo: str, limite: int) -> list[sqlite3.Row]:
+        return self.con.execute(
+            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? ORDER BY tamanho DESC, caminho LIMIT ?",
+            (len(prefixo), prefixo, limite),
+        ).fetchall()
+
+    def totais_por_categoria(self, prefixo: str) -> list[sqlite3.Row]:
+        return self.con.execute(
+            """SELECT categoria, COUNT(*) AS quantidade, SUM(tamanho) AS bytes
+               FROM arquivos WHERE substr(caminho, 1, ?) = ?
+               GROUP BY categoria ORDER BY bytes DESC""",
+            (len(prefixo), prefixo),
+        ).fetchall()
+
+    def arquivos_vazios(self, prefixo: str) -> list[sqlite3.Row]:
+        return self.con.execute(
+            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho = 0 ORDER BY caminho",
+            (len(prefixo), prefixo),
+        ).fetchall()
+
+    def temporarios(
+        self, prefixo: str, extensoes: set[str], prefixos_nome: tuple[str, ...], nomes: set[str]
+    ) -> list[sqlite3.Row]:
+        return [
+            l for l in self.todos(prefixo)
+            if l["extensao"] in extensoes
+            or l["nome"].startswith(prefixos_nome)
+            or l["nome"].casefold() in nomes
+        ]
+
+    def todos(self, prefixo: str) -> list[sqlite3.Row]:
+        return self.con.execute(
+            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? ORDER BY caminho",
+            (len(prefixo), prefixo),
+        ).fetchall()
 
     def tamanho_em_disco(self) -> int:
         """Bytes ocupados pelo índice (arquivo principal + WAL + SHM)."""

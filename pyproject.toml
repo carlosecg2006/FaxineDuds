@@ -5,6 +5,7 @@ description = "Organizador pessoal de arquivos com IA local"
 requires-python = ">=3.11"
 dependencies = [
     "puremagic>=2.0",
+    "blake3>=1.0",
 ]
 
 [project.optional-dependencies]

@@ -40,7 +40,21 @@ def amostras() -> dict[str, bytes]:
     for i in range(1, 6):
         arquivos[f"Diversos/rascunho_{i}.md"] = f"# Rascunho {i}\nideias soltas\n".encode()
     arquivos["_quarentena/nao_deve_ser_indexado.txt"] = b"pasta bloqueada"
+    # Fase 2 (Raio-X)
+    filme = bytes(rnd.getrandbits(8) for _ in range(3 * 1024 * 1024))
+    arquivos["Videos/filme_ferias.mp4.bin"] = filme
+    arquivos["Downloads/filme_ferias (1).mp4.bin"] = filme  # duplicado grande
+    quase = bytes(rnd.getrandbits(8) for _ in range(1024 * 1024))
+    arquivos["Videos/gravacao_parte1.bin"] = quase + b"A"  # mesmo tamanho e começo,
+    arquivos["Videos/gravacao_parte2.bin"] = quase + b"B"  # mas NÃO são duplicados
+    arquivos["Documentos/~$TCC_final.docx"] = b"rascunho temporario do word"
+    arquivos["Downloads/programa.exe.crdownload"] = b"download pela metade" * 50
+    arquivos["Downloads/cache.tmp"] = b"temporario" * 30
+    arquivos["Fotos/Thumbs.db"] = b"miniaturas do windows" * 10
     return arquivos
+
+
+PASTAS_VAZIAS = ["Projetos/antigo", "Projetos/vazio_com_sub/sub1/sub2", "Musicas"]
 
 
 def main() -> int:
@@ -53,6 +67,8 @@ def main() -> int:
         with open(destino, "xb") as f:  # "x" falha se o arquivo já existir
             f.write(dados)
         criados += 1
+    for relativa in PASTAS_VAZIAS:
+        (PASTA_TESTE / relativa).mkdir(parents=True, exist_ok=True)
     total = sum(1 for _ in PASTA_TESTE.rglob("*") if _.is_file())
     print(f"Criados {criados} arquivos novos em {PASTA_TESTE} (total: {total}).")
     return 0

@@ -59,5 +59,26 @@ def test_recusa_esquema_mais_novo(tmp_path):
         Indice(caminho)
 
 
+def test_migra_banco_v1_para_v2(tmp_path):
+    from faxineiro.indice import _ESQUEMA
+
+    caminho = tmp_path / "antigo.sqlite"
+    con = sqlite3.connect(caminho)
+    con.executescript(_ESQUEMA)
+    con.execute("PRAGMA user_version = 1")
+    con.execute(
+        """INSERT INTO arquivos (caminho, pasta_raiz, nome, extensao, tamanho, modificado_ns,
+               visto_em, indexado_em) VALUES ('C:/x/a.txt', 'C:/x', 'a.txt', 'txt', 3, 1, 1, 'ontem')"""
+    )
+    con.commit()
+    con.close()
+
+    with Indice(caminho) as i:
+        assert i.con.execute("PRAGMA user_version").fetchone()[0] == 2
+        colunas = {l["name"] for l in i.con.execute("PRAGMA table_info(arquivos)")}
+        assert "hash_em" in colunas
+        assert i.contar() == 1
+
+
 def test_tamanho_em_disco(indice):
     assert indice.tamanho_em_disco() > 0

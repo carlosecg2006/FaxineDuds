@@ -127,6 +127,21 @@ def detectar_tipo(caminho: str | Path) -> TipoDetectado:
         tipo = "texto" if _parece_texto(cabecalho) else "desconhecido"
 
     categoria = _CATEGORIA_POR_TIPO.get(tipo, "outro")
-    aceitas = _SINONIMOS.get(tipo, {tipo})
-    confere = tipo == "desconhecido" or extensao in aceitas
-    return TipoDetectado(tipo, categoria, confere)
+    return TipoDetectado(tipo, categoria, extensao_confere(tipo, extensao))
+
+
+def extensao_confere(tipo_real: str, extensao: str) -> bool:
+    """A extensão combina com o conteúdo?
+
+    Só acusa quando dá para julgar: se o tipo é desconhecido/vazio, ou se a extensão
+    não é de nenhum formato que conhecemos (.tmp, .bin, .db, .crdownload...), não acusa.
+    """
+    extensao = _normalizar_extensao(extensao)
+    if tipo_real in ("desconhecido", "vazio") or extensao not in _EXTENSOES_CONHECIDAS:
+        return True
+    return extensao in _SINONIMOS.get(tipo_real, {tipo_real})
+
+
+_EXTENSOES_CONHECIDAS: set[str] = (
+    set(_CATEGORIA_POR_TIPO) - {"texto"}
+) | {ext for aceitas in _SINONIMOS.values() for ext in aceitas}

@@ -27,6 +27,13 @@ NOMES_BLOQUEADOS: tuple[str, ...] = (
 )
 
 
+# Raio-X (Fase 2): o que conta como arquivo temporário / lixo.
+TEMP_EXTENSOES: set[str] = {"tmp", "temp", "crdownload", "part", "partial"}
+TEMP_PREFIXOS: tuple[str, ...] = ("~$",)  # rascunhos do Office
+TEMP_NOMES: set[str] = {"thumbs.db", ".ds_store"}
+TOP_PESADOS = 20
+
+
 class Bloqueios:
     """Decide se uma pasta deve ser ignorada. Comparação sem maiúsculas/minúsculas."""
 

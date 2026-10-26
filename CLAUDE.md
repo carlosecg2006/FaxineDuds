@@ -124,5 +124,11 @@ bloqueio não pegaria:
   `scanner.py` (incremental por tamanho + data de modificação, progresso por
   callback). CLI: `.venv\Scripts\python -m faxineiro escanear`. Amostras:
   `ferramentas/gerar_amostras.py`. 30 testes em `tests/` (pytest).
-  Colunas `hash_parcial`/`hash_completo` já existem, vazias.
-- Próxima: Fase 2 — Raio-X (duplicados, pesados, lixo).
+- Fase 2 — concluída. `hashes.py` (BLAKE3: parcial = primeiros 64 KB,
+  completo em blocos de 1 MB), `raiox.py` (duplicados em 3 etapas com cache
+  no índice e aviso de índice desatualizado; pesados e totais por categoria;
+  lixo: vazios, temporários, pastas vazias; extensão errada calculada na hora
+  por `tipos.extensao_confere`). Índice no esquema v2 (migração com
+  `hash_em` + índice SQL no hash). CLI: `python -m faxineiro raiox [--top N]`.
+  Só lê: nada é movido. 53 testes.
+- Próxima: Fase 3 — Quarentena e desfazer.

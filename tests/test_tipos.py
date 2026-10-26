@@ -57,6 +57,14 @@ def test_pdf_sem_extensao(tmp_path):
     assert t.extensao_confere is False
 
 
+def test_extensao_desconhecida_nao_e_acusada(tmp_path):
+    """.tmp/.db/.bin não têm formato fixo: não dá para dizer que estão erradas."""
+    for nome in ("cache.tmp", "Thumbs.db", "dados.bin", "x.crdownload"):
+        p = tmp_path / nome
+        p.write_text("qualquer coisa", encoding="utf-8")
+        assert detectar_tipo(p).extensao_confere is True, nome
+
+
 def test_texto_utf8(tmp_path):
     p = tmp_path / "notas.txt"
     p.write_text("Olá, acentuação ç ã é\n" * 50, encoding="utf-8")
