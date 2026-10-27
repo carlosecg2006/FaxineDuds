@@ -29,6 +29,7 @@ class Progresso:
     avisos: list[str] = field(default_factory=list)
     terminou: bool = False
     cancelado: bool = False
+    fora_por_bloqueio: int = 0  # linhas tiradas do índice por estarem em pasta bloqueada
 
 
 def _agora() -> str:
@@ -153,6 +154,10 @@ def escanear(
     bloqueios = bloqueios or Bloqueios()
     progresso = Progresso()
     pasta_raiz = str(raiz)
+    # Pasta que passou a ser bloqueada (ex.: FileHistory): as linhas antigas saem do índice já,
+    # sem esperar a varredura terminar. Só a pasta pedida e as de dentro dela contam.
+    progresso.fora_por_bloqueio = indice.remover_bloqueados(
+        lambda p: bloqueios.bloqueada(p) and (p == raiz or raiz in p.parents), prefixo=pasta_raiz)
     anteriores = indice.assinaturas(pasta_raiz)
     varredura_id = indice.iniciar_varredura(pasta_raiz, aparelho, _agora())
     pastas_com_erro: list[str] = []

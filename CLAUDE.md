@@ -19,14 +19,23 @@ um conceito por vez, sem enrolação.
    Carlos, Fase 3).
 2. Nada é movido sem prévia (dry-run) e confirmação do usuário.
 3. Nunca tocar em C:\Windows, C:\Program Files, C:\ProgramData,
-   AppData e pastas de programas. Lista de bloqueio configurável.
+   AppData e pastas de programas. Vale em QUALQUER unidade (o D: deste PC
+   tem `Windows`, `Program Files`, `Recovery`... próprios). Lista de
+   bloqueio configurável (`config.NOMES_BLOQUEADOS*`). Uma pasta dentro de
+   uma pasta bloqueada também é bloqueada (ex.: `AppData\Local\...`).
 4. O índice não copia arquivos: guarda só os dados (SQLite) com caminho,
    tamanho, datas, hash, tipo e descrição da IA. Exceções: miniaturas
    pequenas de imagens (96 px, cache em `dados/miniaturas/`; desde a Fase 5,
    a pedido do Carlos), envios ao Arquivo Morto (Fase 8)
    e cópias que o usuário pedir explicitamente (Fase 9), sempre
    verificadas por hash.
-5. Durante o desenvolvimento, testar SÓ em `D:\FaxineDuds\pasta_teste`.
+5. Dividida na Fase 7A:
+   - **Ler** (escanear, Raio-X, espaço): `D:\FaxineDuds\pasta_teste` e as
+     áreas do PC real em `config.AREAS_DE_LEITURA` (`C:\Users\Carlos Eduardo`
+     e o `D:\` inteiro, sem a pasta do próprio app). `config.pode_ler`.
+   - **Mudar o disco** (quarentena, organizar, remover pastas, converter,
+     esvaziar): SÓ na `pasta_teste` (`config.dentro_da_pasta_teste`), até o
+     Carlos decidir liberar.
 6. Internet só quando o usuário ativar, e só para duas coisas:
    - pesquisa de arquivos desconhecidos (Fase 6): envia só nome/tipo,
      nunca o conteúdo;
@@ -67,8 +76,10 @@ bloqueio não pegaria:
 - Projeto em `D:\FaxineDuds`, versionado com Git (local, sem remoto).
 - **PC com 4 GB de RAM** (≈0,4–0,6 GB disponíveis com os programas abertos)
   e 4 núcleos. Tudo que usa IA precisa caber nisso.
-- Ollama com `qwen2.5:0.5b` (padrão), `qwen2.5:1.5b` e `qwen2.5:3b` baixados.
-  O 3b não cabe neste PC (1,9 GB; travou em teste de 26/10/2026).
+- Ollama só com `qwen2.5:0.5b` (os modelos ficam no C:, em `~\.ollama\models`).
+  O 3b e o 1.5b não cabem na RAM e foram apagados em 26/10/2026 (liberou ~2,7 GB).
+- Discos: C: 118 GB (estava com 2 GB livres; 4,7 GB depois de apagar os modelos);
+  D: 530 GB (418 GB livres).
 
 ## Tecnologia
 - Python 3.11+ (no PC: 3.14), interface `PySide6-Essentials` (só QtCore/QtGui/QtWidgets, mais leve)

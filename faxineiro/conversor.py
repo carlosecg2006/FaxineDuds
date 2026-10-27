@@ -228,6 +228,9 @@ def planejar_conversao(
         raise ConversaoRecusada("arquivo não encontrado")
     if not dentro_da_pasta_teste(origem, limite):
         raise ConversaoRecusada(f"fora da área permitida ({limite})")
+    limite_r = Path(limite).resolve()
+    if any(config.Bloqueios().bloqueada(p) for p in origem.parents if limite_r in p.parents):
+        raise ConversaoRecusada("dentro de pasta bloqueada (regra 3): não mexo")
     ferramentas = ferramentas or localizar_ffmpeg()
     opcoes = {o.formato: o for o in formatos_possiveis(origem, ferramentas)}
     if formato not in opcoes:

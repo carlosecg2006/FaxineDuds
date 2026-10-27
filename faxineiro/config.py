@@ -25,7 +25,25 @@ NOMES_BLOQUEADOS: tuple[str, ...] = (
     "_quarentena",
     ".git",
     ".venv",
+    "WUDownloadCache",  # cache do Windows Update
+    "msdownld.tmp",
+    "FileHistory",  # backup do Windows: gerenciado pelo Histórico de Arquivos, nunca pelo Faxineiro
 )
+
+# Backups do Windows: nunca no índice, no Raio-X ou em ações; o "espaco" mostra só o total.
+BACKUPS_DO_WINDOWS: dict[str, str] = {
+    "FileHistory": "Backup do Windows (gerencie pelo Histórico de Arquivos)",
+}
+
+# Pastas de sistema bloqueadas na RAIZ de QUALQUER unidade (o D: deste PC tem as suas próprias).
+NOMES_BLOQUEADOS_NA_RAIZ: tuple[str, ...] = (
+    "Windows", "Program Files", "Program Files (x86)", "ProgramData", "Recovery",
+    "$WINDOWS.~TMP", "$WinREAgent", "Windows.old", "$Windows.~BT", "$Windows.~WS",
+)
+
+# Fase 7A — regra 5 dividida: LER o PC real é permitido nestas áreas; MUDAR o disco continua
+# travado na pasta_teste (dentro_da_pasta_teste), até o Carlos decidir.
+AREAS_DE_LEITURA: tuple[Path, ...] = (Path(r"C:\Users\Carlos Eduardo"), Path("D:\\"))
 
 
 # Quarentena (Fase 3)
@@ -103,9 +121,11 @@ class Bloqueios:
         self,
         caminhos: tuple[str, ...] | list[str] = CAMINHOS_BLOQUEADOS,
         nomes: tuple[str, ...] | list[str] = NOMES_BLOQUEADOS,
+        nomes_na_raiz: tuple[str, ...] | list[str] = NOMES_BLOQUEADOS_NA_RAIZ,
     ) -> None:
         self._caminhos = [self._normalizar(c) for c in caminhos]
         self._nomes = {n.casefold() for n in nomes}
+        self._nomes_na_raiz = {n.casefold() for n in nomes_na_raiz}
 
     @staticmethod
     def _normalizar(caminho: str | Path) -> str:
@@ -115,13 +135,33 @@ class Bloqueios:
         pasta = Path(pasta)
         if pasta.name.casefold() in self._nomes:
             return True
+        if pasta.anchor and pasta.parent == Path(pasta.anchor) and pasta.name.casefold() in self._nomes_na_raiz:
+            return True  # X:\Windows, X:\Program Files... em qualquer unidade
         texto = self._normalizar(pasta)
         return any(texto == c or texto.startswith(c + "\\") or texto.startswith(c + "/")
                    for c in self._caminhos)
 
 
 def dentro_da_pasta_teste(pasta: str | Path, pasta_teste: Path = PASTA_TESTE) -> bool:
-    """Trava de desenvolvimento (regra 5): só aceita pastas dentro de pasta_teste."""
+    """Trava de tudo que MUDA o disco (regra 5): só aceita pastas dentro de pasta_teste."""
     alvo = Path(pasta).resolve()
     base = pasta_teste.resolve()
     return alvo == base or base in alvo.parents
+
+
+def pode_ler(pasta: str | Path, areas: tuple[Path, ...] | None = None) -> bool:
+    """Regra 5, parte de LEITURA (Fase 7A): escanear e analisar podem olhar as áreas do PC real.
+    Mover, organizar, converter e esvaziar continuam usando `dentro_da_pasta_teste`."""
+    areas = AREAS_DE_LEITURA if areas is None else areas
+    if dentro_da_pasta_teste(pasta):
+        return True
+    alvo = Path(pasta).resolve()
+    if any(Bloqueios().bloqueada(p) for p in (alvo, *alvo.parents)):
+        return False  # ex.: C:\Users\Carlos Eduardo\AppData\... continua proibido (regra 3)
+    return any(dentro_da_pasta_teste(alvo, a) for a in areas)
+
+
+def bloqueios_do_pc() -> "Bloqueios":
+    """Bloqueios para varrer o PC real: os de sempre + a pasta do próprio app (índice sendo
+    escrito, .venv, ffmpeg, clones de referência e a pasta_teste, que tem varredura própria)."""
+    return Bloqueios(caminhos=(*CAMINHOS_BLOQUEADOS, str(RAIZ_PROJETO)))

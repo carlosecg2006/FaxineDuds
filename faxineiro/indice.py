@@ -479,6 +479,35 @@ class Indice:
             (len(prefixo), prefixo, padrao, padrao, limite, offset),
         ).fetchall()
 
+    def remover_bloqueados(self, bloqueada, prefixo: str | None = None) -> int:
+        """Tira do ÍNDICE (só as linhas do banco) os arquivos que estão dentro de pastas que
+        passaram a ser bloqueadas. `bloqueada(pasta) -> bool`. Os arquivos em si não são tocados."""
+        sql, args = "SELECT id, caminho FROM arquivos", []
+        if prefixo:
+            p = str(prefixo).rstrip("\\/") + os.sep
+            sql += " WHERE substr(caminho, 1, ?) = ?"
+            args = [len(p), p]
+        cache: dict[Path, bool] = {}
+
+        def dentro_de_bloqueada(pasta: Path) -> bool:
+            if pasta not in cache:
+                pai = pasta.parent
+                cache[pasta] = bloqueada(pasta) or (pai != pasta and dentro_de_bloqueada(pai))
+            return cache[pasta]
+
+        remover = [(i,) for i, c in self.con.execute(sql, args) if dentro_de_bloqueada(Path(c).parent)]
+        self.con.executemany("DELETE FROM arquivos WHERE id = ?", remover)
+        self.con.commit()
+        return len(remover)
+
+    def soma_por_prefixo(self, prefixo: str) -> int:
+        """Bytes de todos os arquivos indexados cujo caminho começa com `prefixo` (ex.: 'C:\\')."""
+        linha = self.con.execute(
+            "SELECT COALESCE(SUM(tamanho), 0) FROM arquivos WHERE substr(caminho, 1, ?) = ? COLLATE NOCASE",
+            (len(prefixo), prefixo),
+        ).fetchone()
+        return int(linha[0])
+
     def lotes_na_quarentena(self) -> list[sqlite3.Row]:
         """Resumo por lote do que ainda está na quarentena: quantidade, bytes e desde quando."""
         return self.con.execute(

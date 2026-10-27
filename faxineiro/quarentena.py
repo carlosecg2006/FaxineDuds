@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import raiox
-from .config import PASTA_TESTE, dentro_da_pasta_teste, pasta_quarentena
+from .config import PASTA_TESTE, Bloqueios, dentro_da_pasta_teste, pasta_quarentena
 from .hashes import Hasher
 from .indice import Indice
 from .scanner import indexar_arquivo
@@ -113,6 +113,17 @@ class Quarentena:
             if not dentro_da_pasta_teste(c, self.limite):
                 raise OperacaoRecusada(f"Fora da área permitida ({self.limite}): {c}")
 
+    def _em_pasta_bloqueada(self, caminho: Path) -> bool:
+        """Regra 3: arquivo dentro de pasta bloqueada (FileHistory, AppData...) nunca entra em ação.
+        Olha do arquivo até a área permitida (o que está acima dela não conta)."""
+        bloqueios = Bloqueios()
+        for pasta in Path(caminho).parents:
+            if pasta == self.limite or self.limite not in pasta.parents:
+                return False
+            if bloqueios.bloqueada(pasta):
+                return True
+        return False
+
     @staticmethod
     def _mesma_unidade(a: Path, b: Path) -> bool:
         return Path(a).resolve().drive.casefold() == Path(b).resolve().drive.casefold()
@@ -200,6 +211,8 @@ class Quarentena:
                 passo.problema = "arquivo não encontrado"
             elif not dentro_da_pasta_teste(origem, self.limite):
                 passo.problema = f"fora da área permitida ({self.limite})"
+            elif self._em_pasta_bloqueada(origem):
+                passo.problema = "dentro de pasta bloqueada (regra 3): não mexo"
             elif not self._mesma_unidade(origem, self.local(origem)):
                 passo.problema = "a quarentena fica em outra unidade (não copio arquivos)"
             else:
@@ -293,6 +306,8 @@ class Quarentena:
                 passo.problema = "arquivo não encontrado"
             elif not (dentro_da_pasta_teste(origem, self.limite) and dentro_da_pasta_teste(destino, self.limite)):
                 passo.problema = f"fora da área permitida ({self.limite})"
+            elif self._em_pasta_bloqueada(origem) or self._em_pasta_bloqueada(destino):
+                passo.problema = "dentro de pasta bloqueada (regra 3): não mexo"
             elif not self._mesma_unidade(origem, destino):
                 passo.problema = "destino em outra unidade (não copio arquivos)"
             elif origem == destino:

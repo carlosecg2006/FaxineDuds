@@ -203,6 +203,6 @@ def test_cli_raiox_recusa_fora_da_pasta_teste(tmp_path, capsys):
 def test_cli_raiox_exige_escanear_antes(monkeypatch, tmp_path, capsys):
     base = tmp_path / "pasta_teste"
     base.mkdir()
-    monkeypatch.setattr("faxineiro.__main__.dentro_da_pasta_teste", lambda p: True)
+    monkeypatch.setattr("faxineiro.__main__.pode_ler", lambda p: True)
     assert main(["raiox", str(base), "--indice", str(tmp_path / "i.sqlite")]) == 1
     assert "ainda não foi escaneada" in capsys.readouterr().err
