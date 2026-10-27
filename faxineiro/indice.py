@@ -241,7 +241,7 @@ class Indice:
         return self.con.execute(
             """
             WITH daqui AS (
-                SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho > 0
+                SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho > 0 AND aparelho != 'nuvem'
             )
             SELECT * FROM daqui
             WHERE tamanho IN (SELECT tamanho FROM daqui GROUP BY tamanho HAVING COUNT(*) > 1)
@@ -260,7 +260,7 @@ class Indice:
 
     def maiores(self, prefixo: str, limite: int, minimo: int = 0) -> list[sqlite3.Row]:
         return self.con.execute(
-            """SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho >= ?
+            """SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho >= ? AND aparelho != 'nuvem'
                ORDER BY tamanho DESC, caminho LIMIT ?""",
             (len(prefixo), prefixo, minimo, limite),
         ).fetchall()
@@ -268,14 +268,14 @@ class Indice:
     def totais_por_categoria(self, prefixo: str) -> list[sqlite3.Row]:
         return self.con.execute(
             """SELECT categoria, COUNT(*) AS quantidade, SUM(tamanho) AS bytes
-               FROM arquivos WHERE substr(caminho, 1, ?) = ?
+               FROM arquivos WHERE substr(caminho, 1, ?) = ? AND aparelho != 'nuvem'
                GROUP BY categoria ORDER BY bytes DESC""",
             (len(prefixo), prefixo),
         ).fetchall()
 
     def arquivos_vazios(self, prefixo: str) -> list[sqlite3.Row]:
         return self.con.execute(
-            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho = 0 ORDER BY caminho",
+            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho = 0 AND aparelho != 'nuvem' ORDER BY caminho",
             (len(prefixo), prefixo),
         ).fetchall()
 
@@ -284,9 +284,8 @@ class Indice:
     ) -> list[sqlite3.Row]:
         return [
             l for l in self.todos(prefixo)
-            if l["extensao"] in extensoes
-            or l["nome"].startswith(prefixos_nome)
-            or l["nome"].casefold() in nomes
+            if l["aparelho"] != "nuvem" and (l["extensao"] in extensoes)
+            or l["aparelho"] != "nuvem" and (l["nome"].startswith(prefixos_nome) or l["nome"].casefold() in nomes)
         ]
 
     def todos(self, prefixo: str) -> list[sqlite3.Row]:
@@ -503,7 +502,7 @@ class Indice:
     def soma_por_prefixo(self, prefixo: str) -> int:
         """Bytes de todos os arquivos indexados cujo caminho começa com `prefixo` (ex.: 'C:\\')."""
         linha = self.con.execute(
-            "SELECT COALESCE(SUM(tamanho), 0) FROM arquivos WHERE substr(caminho, 1, ?) = ? COLLATE NOCASE",
+            "SELECT COALESCE(SUM(tamanho), 0) FROM arquivos WHERE substr(caminho, 1, ?) = ? COLLATE NOCASE AND aparelho != 'nuvem'",
             (len(prefixo), prefixo),
         ).fetchone()
         return int(linha[0])

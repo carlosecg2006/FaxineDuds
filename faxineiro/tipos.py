@@ -131,6 +131,17 @@ def detectar_tipo(caminho: str | Path) -> TipoDetectado:
     return TipoDetectado(tipo, categoria, extensao_confere(tipo, extensao))
 
 
+def tipo_pela_extensao(extensao: str) -> TipoDetectado:
+    """Sem abrir o arquivo (ex.: só na nuvem): o melhor palpite é a extensão."""
+    ext = _normalizar_extensao(extensao)
+    if ext in _CATEGORIA_POR_TIPO:  # "msi", "mp4", "png"... direto
+        return TipoDetectado(ext, _CATEGORIA_POR_TIPO[ext], True)
+    for tipo, aceitas in _SINONIMOS.items():  # "jpeg"→jpg, "md"→texto...
+        if ext in aceitas and tipo in _CATEGORIA_POR_TIPO:
+            return TipoDetectado(tipo, _CATEGORIA_POR_TIPO[tipo], True)
+    return TipoDetectado("desconhecido", "outro", True)
+
+
 def extensao_confere(tipo_real: str, extensao: str) -> bool:
     """A extensão combina com o conteúdo?
 

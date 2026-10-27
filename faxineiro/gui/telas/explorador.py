@@ -157,14 +157,15 @@ class TelaExplorador(QWidget):
             "Hash": (l["hash_completo"][:16] + "…") if l["hash_completo"] else "(ainda não calculado)",
             "Descrição": l["descricao"] or "(sem descrição)",
             "Origem": {"ia": "IA", "ia_visao": "IA (visão)", "regras": "regras"}.get(l["descricao_origem"], "—")
-            + (" — marcado para revisar" if l["revisar"] else ""),
+            + (" — marcado para revisar" if l["revisar"] else "")
+            + (" — SÓ NA NUVEM (não está baixado neste PC)" if l["aparelho"] == "nuvem" else ""),
         }
         for nome, valor in valores.items():
             self.campos[nome].setText(str(valor))
         self.miniatura.clear()
         self._caminho_mostrado = l["caminho"]
         self.botao_mostrar.setEnabled(True)
-        if l["categoria"] == "imagem":
+        if l["categoria"] == "imagem" and l["aparelho"] != "nuvem":  # só na nuvem: abrir baixaria a foto
             self.amb.miniaturas.pedir(l["caminho"])
 
     def _miniatura_chegou(self, caminho: str, pix: QPixmap) -> None:

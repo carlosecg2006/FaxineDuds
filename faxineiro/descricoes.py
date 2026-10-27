@@ -230,6 +230,9 @@ class _Descritor:
 
     def descrever_com_ia(self, linha: sqlite3.Row) -> tuple[str, str, bool] | None:
         """Tenta a IA. Devolve (descrição, origem, revisar) ou None se não deu."""
+        if _so_na_nuvem(linha):
+            self.progresso.avisos.append(f"{linha['nome']} está só na nuvem: não abro (baixaria o arquivo).")
+            return None
         if self.usar_ia:
             if linha["categoria"] == "imagem":
                 if self.modelo_visao and linha["tamanho"] <= IMAGEM_MAX_BYTES:
@@ -262,6 +265,13 @@ def obvio_pelo_nome(linha: sqlite3.Row) -> bool:
     return len(palavras_uteis(caminho.stem) + palavras_uteis(caminho.parent.name)) >= 2
 
 
+def _so_na_nuvem(linha) -> bool:
+    try:
+        return linha["aparelho"] == "nuvem"
+    except (KeyError, IndexError):
+        return False
+
+
 def precisa_ia(linha: sqlite3.Row) -> bool:
     """IA seletiva: as regras resolvem o óbvio pelo tipo, pelo nome e pela pasta.
 
@@ -270,8 +280,8 @@ def precisa_ia(linha: sqlite3.Row) -> bool:
     - Precisa de IA: texto/documento com nome genérico ('Novo documento.docx', 'scan_0001.pdf')
       e arquivos de tipo desconhecido.
     """
-    if (linha["tamanho"] or 0) == 0:
-        return False
+    if (linha["tamanho"] or 0) == 0 or _so_na_nuvem(linha):
+        return False  # só na nuvem: ler o conteúdo baixaria o arquivo
     if linha["tipo_real"] == "desconhecido":
         return True
     if linha["categoria"] not in ("texto", "documento"):

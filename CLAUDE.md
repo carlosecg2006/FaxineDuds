@@ -105,7 +105,7 @@ bloqueio não pegaria:
 | 5 | Interface | Concluída — app gráfico em PySide6 |
 | 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
-| 7 | PC real e .exe | Sair da `pasta_teste` com segurança e gerar instalador (ver pendências abaixo) |
+| 7 | PC real e .exe | 7A concluída (ler o PC real, só leitura). 7B: mudar o disco fora da `pasta_teste` e gerar instalador (ver pendências abaixo) |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -261,4 +261,22 @@ bloqueio não pegaria:
   direito → "Converter…" (`gui/conversao.py`). Demo real: PNG→JPG 0,1 s; extrair
   áudio (cópia) 0,2 s; vídeo 20 s → WebM 9,9 s em modo substituir + desfazer.
   294 testes (os de ffmpeg pulam se ele não for achado).
-- Próxima: Fase 6 — Pesquisa online (opcional).
+- Fase 7A — concluída (PC real, SÓ LEITURA). Regra 5 dividida: `config.pode_ler`
+  (pasta_teste + `AREAS_DE_LEITURA`, recusa o que estiver dentro de pasta bloqueada) ×
+  `dentro_da_pasta_teste` (tudo que muda o disco continua só lá). Bloqueios valem em
+  qualquer unidade (`NOMES_BLOQUEADOS_NA_RAIZ`: Windows, Program Files, Recovery,
+  $WINDOWS.~TMP...; `FileHistory`, `WUDownloadCache`, `msdownld.tmp` em qualquer nível);
+  a pasta do app fica fora (`bloqueios_do_pc`). Pasta que passa a ser bloqueada sai do
+  índice na próxima varredura (`indice.remover_bloqueados`, só as linhas).
+  `espaco.py` + `python -m faxineiro espaco`: usado = explicado pelo índice + arquivos de
+  sistema da raiz (pagefile/hiberfil/swapfile) + backups do Windows (FileHistory só como
+  total, "Backup do Windows (gerencie pelo Histórico de Arquivos)") + não explicado.
+  `escanear --pc` (C:\Users\Carlos Eduardo e D:\, prioridade baixa, Ctrl+C cancela) e
+  `raiox --pc` (por área; relatório com nomes reais em `dados/relatorios/`, fora do Git).
+  OneDrive "só na nuvem" (atributos RECALL_ON_*/OFFLINE, lidos da listagem): NUNCA é
+  aberto (abrir = baixar); entra como `aparelho = nuvem`, `conectado = 0`, tipo pela
+  extensão (`tipos.tipo_pela_extensao`) e fica fora de duplicados, pesados, lixo,
+  "explicado", IA e miniaturas. Números reais (27/10/2026): 100.647 arquivos no índice
+  (126 MB); D: incremental em 4 min (arquivos novos do D: ~2–3/s, provável antivírus
+  lendo junto). 334 testes.
+- Próxima: Fase 6 — Pesquisa online (opcional) ou 7B.

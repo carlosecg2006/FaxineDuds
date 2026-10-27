@@ -182,6 +182,92 @@ def test_acoes_recusam_o_filehistory(com_backup, indice):
         planejar_conversao(dentro, "png", limite=com_backup, ferramentas=Ferramentas(None, None))
 
 
+# --- OneDrive "só na nuvem": nunca abrir (abrir = baixar o arquivo inteiro) --------------------
+
+
+@pytest.fixture
+def nuvem(tmp_path, monkeypatch):
+    """Finge que os arquivos com 'nuvem' no nome estão só na nuvem (atributo do Windows)."""
+    from faxineiro import scanner
+
+    raiz = tmp_path / "OneDrive"
+    raiz.mkdir()
+    (raiz / "foto_nuvem.jpg").write_bytes(b"\xff\xd8\xff" + bytes(5000))
+    (raiz / "copia_nuvem.jpg").write_bytes(b"\xff\xd8\xff" + bytes(5000))  # "igual"
+    (raiz / "relatorio_nuvem.txt").write_text("conteudo", encoding="utf-8")
+    (raiz / "local.txt").write_text("conteudo local", encoding="utf-8")
+    def falso(st):
+        return "nuvem" in Path(falso.atual).name  # só o nome: a pasta do pytest também diz "nuvem"
+
+    abertos = []
+
+    def detector(caminho):
+        abertos.append(Path(caminho).name)
+        from faxineiro.tipos import detectar_tipo
+
+        return detectar_tipo(caminho)
+
+    def montar(caminho, st, pasta_raiz, aparelho, det, _m=scanner._montar_registro):
+        falso.atual = caminho
+        return _m(caminho, st, pasta_raiz, aparelho, det)
+
+    monkeypatch.setattr(scanner, "so_na_nuvem", falso)
+    monkeypatch.setattr(scanner, "_montar_registro", montar)
+    return raiz, detector, abertos
+
+
+def test_so_na_nuvem_nao_e_aberto(nuvem, indice):
+    from faxineiro.scanner import escanear
+
+    raiz, detector, abertos = nuvem
+    escanear(raiz, indice, detector=detector)
+    assert abertos == ["local.txt"]  # só o arquivo local foi aberto
+    l = indice.buscar(str(raiz / "foto_nuvem.jpg"))
+    assert l["aparelho"] == "nuvem" and l["conectado"] == 0
+    assert (l["tipo_real"], l["categoria"]) == ("jpg", "imagem")  # palpite pela extensão
+
+
+def test_so_na_nuvem_fica_fora_do_raiox_e_do_espaco(nuvem, indice):
+    from faxineiro import raiox
+    from faxineiro.hashes import Hasher
+    from faxineiro.scanner import escanear
+
+    raiz, detector, _ = nuvem
+    escanear(raiz, indice, detector=detector)
+    hasher = Hasher()
+    assert raiox.encontrar_duplicados(indice, raiz, hasher=hasher).grupos == []
+    assert hasher.parciais == 0  # nenhum arquivo da nuvem foi lido para calcular hash
+    assert raiox.pesados(indice, raiz, minimo=0) and all(
+        l["aparelho"] != "nuvem" for l in raiox.pesados(indice, raiz, minimo=0))
+    assert indice.soma_por_prefixo(str(raiz)) == (raiz / "local.txt").stat().st_size
+
+
+def test_so_na_nuvem_nao_vai_para_a_ia(nuvem, indice):
+    from faxineiro.descricoes import descrever, descrever_arquivo
+    from faxineiro.scanner import escanear
+
+    from .falsos import ClienteFalso
+
+    raiz, detector, _ = nuvem
+    escanear(raiz, indice, detector=detector)
+    ia = ClienteFalso()
+    descrever(indice, raiz, ia, dormir=lambda s: None)
+    assert not any("nuvem" in p for p in ia.prompts)
+    p = descrever_arquivo(indice, raiz / "relatorio_nuvem.txt", ClienteFalso())
+    assert any("só na nuvem" in a for a in p.avisos)
+
+
+def test_atributo_de_nuvem_do_windows():
+    from types import SimpleNamespace
+
+    from faxineiro.scanner import so_na_nuvem
+
+    assert so_na_nuvem(SimpleNamespace(st_file_attributes=0x00400000))  # RECALL_ON_DATA_ACCESS
+    assert so_na_nuvem(SimpleNamespace(st_file_attributes=0x00001000 | 0x20))  # OFFLINE
+    assert not so_na_nuvem(SimpleNamespace(st_file_attributes=0x20))  # arquivo normal
+    assert not so_na_nuvem(SimpleNamespace())  # fora do Windows
+
+
 def test_arquivos_de_sistema_pela_listagem(tmp_path):
     (tmp_path / "pagefile.sys").write_bytes(b"x" * 100)
     (tmp_path / "hiberfil.sys").write_bytes(b"x" * 50)

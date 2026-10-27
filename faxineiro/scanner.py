@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .config import Bloqueios
 from .indice import Indice, Registro
-from .tipos import TipoDetectado, detectar_tipo
+from .tipos import TipoDetectado, detectar_tipo, tipo_pela_extensao
 
 LOTE_COMMIT = 500
 INTERVALO_PROGRESSO = 25
@@ -101,8 +101,15 @@ def _montar_registro(
     aparelho: str,
     detector: Callable[[Path], TipoDetectado],
 ) -> Registro:
-    tipo = detector(Path(caminho))
     nome = Path(caminho).name
+    conectado = True
+    if so_na_nuvem(st):
+        # OneDrive/Dropbox "só na nuvem": ABRIR baixaria o arquivo inteiro (e encheria o disco).
+        # Fica no índice só com o que a listagem da pasta já diz; o tipo vem da extensão.
+        tipo = tipo_pela_extensao(Path(nome).suffix)
+        aparelho, conectado = "nuvem", False
+    else:
+        tipo = detector(Path(caminho))
     return Registro(
         caminho=caminho,
         pasta_raiz=pasta_raiz,
@@ -116,8 +123,18 @@ def _montar_registro(
         categoria=tipo.categoria,
         extensao_confere=tipo.extensao_confere,
         aparelho=aparelho,
-        conectado=True,
+        conectado=conectado,
     )
+
+
+# Atributos do Windows que marcam arquivo que não está (todo) no disco: abrir faz o download.
+_ATRIBUTOS_SO_NA_NUVEM = 0x00400000 | 0x00040000 | 0x00001000  # RECALL_ON_DATA_ACCESS | RECALL_ON_OPEN | OFFLINE
+
+
+def so_na_nuvem(st: os.stat_result) -> bool:
+    """True para arquivo "só na nuvem" (OneDrive Arquivos Sob Demanda etc.). Lê o atributo da
+    listagem da pasta — o arquivo não é aberto, então nada é baixado."""
+    return bool(getattr(st, "st_file_attributes", 0) & _ATRIBUTOS_SO_NA_NUVEM)
 
 
 def indexar_arquivo(
