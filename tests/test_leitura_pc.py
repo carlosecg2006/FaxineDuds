@@ -280,3 +280,86 @@ def test_cli_recusa_ler_appdata(tmp_path, capsys):
 
     assert main(["escanear", str(tmp_path), "--indice", str(tmp_path / "i.sqlite")]) == 2
     assert "Recusado" in capsys.readouterr().err
+
+
+# --- pastas de programa (.minecraft, .vscode...): o Raio-X não lista o que tem dentro ---------
+
+
+@pytest.fixture
+def com_programas(tmp_path, indice):
+    from faxineiro.scanner import escanear
+
+    casa = tmp_path / "casa"
+    jogo = casa / ".minecraft" / "versions"
+    jogo.mkdir(parents=True)
+    (jogo / "1.21.jar").write_bytes(b"J" * 3000)
+    (jogo / "forge.jar").write_bytes(b"J" * 3000)  # duplicado "normal" do jogo
+    (jogo / "grande.jar").write_bytes(b"G" * 50_000)
+    (jogo / "~$lixo.tmp").write_bytes(b"x")
+    (jogo / "vazio.dat").write_bytes(b"")
+    (casa / ".minecraft" / "logs").mkdir()  # pasta vazia do jogo
+    (casa / "Curseforge" / "x").mkdir(parents=True)  # nome com maiúscula também conta
+    (casa / "Curseforge" / "x" / "mod.jar").write_bytes(b"M" * 20_000)
+    docs = casa / "Documentos"
+    docs.mkdir()
+    (docs / "a.txt").write_text("igual" * 300, encoding="utf-8")
+    (docs / "b.txt").write_text("igual" * 300, encoding="utf-8")
+    (docs / "~$rascunho.docx").write_bytes(b"x")
+    (casa / "Vazia").mkdir()
+    escanear(casa, indice)
+    return casa
+
+
+def test_raiox_nao_lista_dentro_de_pasta_de_programa(com_programas, indice):
+    from faxineiro import raiox
+
+    casa = com_programas
+    grupos = raiox.encontrar_duplicados(indice, casa).grupos
+    assert [sorted(Path(a["caminho"]).name for a in g.arquivos) for g in grupos] == [["a.txt", "b.txt"]]
+    assert raiox.pesados(indice, casa, minimo=0) and all(
+        ".minecraft" not in l["caminho"] and "Curseforge" not in l["caminho"]
+        for l in raiox.pesados(indice, casa, minimo=0))
+    lx = raiox.lixo(indice, casa)
+    assert [l["nome"] for l in lx.temporarios] == ["~$rascunho.docx"]
+    assert lx.vazios == []
+    assert raiox.pastas_vazias(casa) == [str(casa / "Vazia")]
+    assert all(".minecraft" not in l["caminho"] for l in raiox.extensao_errada(indice, casa))
+
+
+def test_raiox_da_propria_pasta_de_programa_olha_dentro(com_programas, indice):
+    from faxineiro import raiox
+
+    jogo = com_programas / ".minecraft"
+    grupos = raiox.encontrar_duplicados(indice, jogo).grupos
+    assert [sorted(Path(a["caminho"]).name for a in g.arquivos) for g in grupos] == [["1.21.jar", "forge.jar"]]
+
+
+def test_espaco_mostra_o_total_de_cada_pasta_de_programa(com_programas, indice):
+    casa = com_programas
+    e = calcular(indice, str(casa), uso=lambda r: (100 * GB, 50 * GB, 50 * GB),
+                 sistema=lambda r: {}, backups=lambda r: {})
+    jogo = 3000 + 3000 + 50_000 + 1
+    assert list(e.programas.items()) == [(str(casa / ".minecraft"), jogo), (str(casa / "Curseforge"), 20_000)]
+    # Continuam contando no "explicado": nada some da conta do disco.
+    assert e.explicado == indice.soma_por_prefixo(str(Path(str(casa)).anchor))
+
+
+def test_pasta_de_programa_dentro_de_outra_conta_so_na_de_fora(tmp_path, indice):
+    from faxineiro.scanner import escanear
+
+    dentro = tmp_path / "casa" / ".minecraft" / "mods" / ".vscode"
+    dentro.mkdir(parents=True)
+    (dentro / "s.json").write_bytes(b"1" * 10)
+    (tmp_path / "casa" / ".minecraft" / "a.jar").write_bytes(b"2" * 5)
+    escanear(tmp_path / "casa", indice)
+    assert indice.pastas_de_programa(str(tmp_path), config.PASTAS_DE_PROGRAMA) == {
+        str(tmp_path / "casa" / ".minecraft"): 15}
+
+
+def test_pasta_de_programa_e_bloco_para_organizar(tmp_path):
+    from faxineiro.protecoes import Protecoes
+
+    p = Protecoes(nuvem_pastas=[])
+    assert p.motivo_bloco(tmp_path / ".minecraft")
+    assert p.motivo_bloco(tmp_path / "CurseForge")
+    assert p.motivo_bloco(tmp_path / "Documentos") is None

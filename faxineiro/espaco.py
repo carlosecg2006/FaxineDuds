@@ -32,6 +32,8 @@ class EspacoUnidade:
     explicado: int  # soma dos arquivos que estão no índice nessa unidade
     sistema: dict[str, int] = field(default_factory=dict)  # arquivos conhecidos da raiz
     backups: dict[str, int] = field(default_factory=dict)  # rótulo → bytes (ex.: FileHistory)
+    # Pastas de programa (.minecraft, .vscode...): já contam no "explicado"; aqui só o total de cada.
+    programas: dict[str, int] = field(default_factory=dict)
 
     @property
     def sistema_total(self) -> int:
@@ -110,4 +112,5 @@ def calcular(
     raiz = str(Path(unidade).anchor or unidade)
     total, usado, livre = uso(raiz)
     return EspacoUnidade(unidade=raiz, total=total, usado=usado, livre=livre,
-                         explicado=indice.soma_por_prefixo(raiz), sistema=sistema(raiz), backups=backups(raiz))
+                         explicado=indice.soma_por_prefixo(raiz), sistema=sistema(raiz), backups=backups(raiz),
+                         programas=indice.pastas_de_programa(raiz, config.PASTAS_DE_PROGRAMA))

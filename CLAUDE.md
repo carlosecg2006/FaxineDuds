@@ -51,7 +51,7 @@ um conceito por vez, sem enrolação.
    Drive, Dropbox... — mover para fora APAGA da nuvem) nem dentro de
    pastas-bloco (projetos e programas: .git, package.json, .sln, .exe com
    DLLs, saves de jogo...), que são tratadas como uma unidade.
-   Listas configuráveis em `config.py` (`BLOCO_*`, `NUVEM_*`).
+   Listas configuráveis em `config.py` (`BLOCO_*`, `NUVEM_*`, `PASTAS_DE_PROGRAMA`).
 
 ## Regras para o Claude (desenvolvimento)
 As regras de bloqueio em `.claude/settings.json` só comparam o texto do
@@ -279,4 +279,10 @@ bloqueio não pegaria:
   "explicado", IA e miniaturas. Números reais (27/10/2026): 100.647 arquivos no índice
   (126 MB); D: incremental em 4 min (arquivos novos do D: ~2–3/s, provável antivírus
   lendo junto). 334 testes.
+  Pastas de programa (`config.PASTAS_DE_PROGRAMA`: .minecraft, curseforge, .vscode, .gemini,
+  .claude, .ollama...): são pasta-bloco; o Raio-X não lista o que tem dentro (duplicados,
+  pesados, lixo, pastas vazias — filtro `excluir` nas consultas do índice), a não ser que a
+  própria pasta pedida seja uma delas; o `espaco` mostra o total de cada uma (do índice,
+  `indice.pastas_de_programa`; aninhada conta só na de fora). Real: C: 1,5 GB (curseforge,
+  .vscode, .ollama, .claude, .gemini); D: 4,2 GB (.minecraft 4,1 GB). 339 testes.
 - Próxima: Fase 6 — Pesquisa online (opcional) ou 7B.

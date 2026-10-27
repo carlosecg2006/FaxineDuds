@@ -93,6 +93,13 @@ CREATE TABLE IF NOT EXISTS varreduras (
 """
 
 
+def _sem_pastas(excluir: tuple[str, ...]) -> tuple[str, list[str]]:
+    """Trecho SQL que tira os arquivos que estão dentro de uma pasta com um destes nomes
+    (ex.: '.minecraft'), em qualquer nível. Nomes ASCII: lower() do SQLite basta."""
+    sql = "".join(" AND instr(lower(caminho), ?) = 0" for _ in excluir)
+    return sql, [f"{os.sep}{nome.lower()}{os.sep}" for nome in excluir]
+
+
 @dataclass(frozen=True)
 class Registro:
     caminho: str
@@ -236,18 +243,19 @@ class Indice:
                 return True
         return False
 
-    def candidatos_duplicados(self, prefixo: str) -> list[sqlite3.Row]:
+    def candidatos_duplicados(self, prefixo: str, excluir: tuple[str, ...] = ()) -> list[sqlite3.Row]:
         """Arquivos não vazios que dividem o tamanho com pelo menos outro (etapa 1)."""
+        sem, params = _sem_pastas(excluir)
         return self.con.execute(
-            """
+            f"""
             WITH daqui AS (
-                SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho > 0 AND aparelho != 'nuvem'
+                SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho > 0 AND aparelho != 'nuvem'{sem}
             )
             SELECT * FROM daqui
             WHERE tamanho IN (SELECT tamanho FROM daqui GROUP BY tamanho HAVING COUNT(*) > 1)
             ORDER BY tamanho DESC, caminho
             """,
-            (len(prefixo), prefixo),
+            (len(prefixo), prefixo, *params),
         ).fetchall()
 
     def gravar_hashes(self, arquivo_id: int, parcial: str | None, completo: str | None, agora: str) -> None:
@@ -258,41 +266,67 @@ class Indice:
             (parcial, completo, agora, arquivo_id),
         )
 
-    def maiores(self, prefixo: str, limite: int, minimo: int = 0) -> list[sqlite3.Row]:
+    def maiores(self, prefixo: str, limite: int, minimo: int = 0, excluir: tuple[str, ...] = ()) -> list[sqlite3.Row]:
+        sem, params = _sem_pastas(excluir)
         return self.con.execute(
-            """SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho >= ? AND aparelho != 'nuvem'
+            f"""SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho >= ? AND aparelho != 'nuvem'{sem}
                ORDER BY tamanho DESC, caminho LIMIT ?""",
-            (len(prefixo), prefixo, minimo, limite),
+            (len(prefixo), prefixo, minimo, *params, limite),
         ).fetchall()
 
-    def totais_por_categoria(self, prefixo: str) -> list[sqlite3.Row]:
+    def totais_por_categoria(self, prefixo: str, excluir: tuple[str, ...] = ()) -> list[sqlite3.Row]:
+        sem, params = _sem_pastas(excluir)
         return self.con.execute(
-            """SELECT categoria, COUNT(*) AS quantidade, SUM(tamanho) AS bytes
-               FROM arquivos WHERE substr(caminho, 1, ?) = ? AND aparelho != 'nuvem'
+            f"""SELECT categoria, COUNT(*) AS quantidade, SUM(tamanho) AS bytes
+               FROM arquivos WHERE substr(caminho, 1, ?) = ? AND aparelho != 'nuvem'{sem}
                GROUP BY categoria ORDER BY bytes DESC""",
-            (len(prefixo), prefixo),
+            (len(prefixo), prefixo, *params),
         ).fetchall()
 
-    def arquivos_vazios(self, prefixo: str) -> list[sqlite3.Row]:
+    def arquivos_vazios(self, prefixo: str, excluir: tuple[str, ...] = ()) -> list[sqlite3.Row]:
+        sem, params = _sem_pastas(excluir)
         return self.con.execute(
-            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho = 0 AND aparelho != 'nuvem' ORDER BY caminho",
-            (len(prefixo), prefixo),
+            f"""SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? AND tamanho = 0 AND aparelho != 'nuvem'{sem}
+               ORDER BY caminho""",
+            (len(prefixo), prefixo, *params),
         ).fetchall()
 
     def temporarios(
-        self, prefixo: str, extensoes: set[str], prefixos_nome: tuple[str, ...], nomes: set[str]
+        self, prefixo: str, extensoes: set[str], prefixos_nome: tuple[str, ...], nomes: set[str],
+        excluir: tuple[str, ...] = (),
     ) -> list[sqlite3.Row]:
         return [
-            l for l in self.todos(prefixo)
+            l for l in self.todos(prefixo, excluir)
             if l["aparelho"] != "nuvem" and (l["extensao"] in extensoes)
             or l["aparelho"] != "nuvem" and (l["nome"].startswith(prefixos_nome) or l["nome"].casefold() in nomes)
         ]
 
-    def todos(self, prefixo: str) -> list[sqlite3.Row]:
+    def todos(self, prefixo: str, excluir: tuple[str, ...] = ()) -> list[sqlite3.Row]:
+        sem, params = _sem_pastas(excluir)
         return self.con.execute(
-            "SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ? ORDER BY caminho",
-            (len(prefixo), prefixo),
+            f"SELECT * FROM arquivos WHERE substr(caminho, 1, ?) = ?{sem} ORDER BY caminho",
+            (len(prefixo), prefixo, *params),
         ).fetchall()
+
+    def pastas_de_programa(self, prefixo: str, nomes: tuple[str, ...]) -> dict[str, int]:
+        """Caminho de cada pasta de programa (a de cima, se houver uma dentro da outra) → bytes.
+        Vem do índice: nada é lido do disco."""
+        tamanhos: dict[str, int] = {}
+        for nome in nomes:
+            marca = f"{os.sep}{nome.lower()}{os.sep}"
+            for pasta, total in self.con.execute(
+                """SELECT substr(caminho, 1, instr(lower(caminho), ?) + ? - 2) AS pasta, SUM(tamanho)
+                   FROM arquivos WHERE substr(caminho, 1, ?) = ? COLLATE NOCASE AND aparelho != 'nuvem'
+                     AND instr(lower(caminho), ?) > 0
+                   GROUP BY pasta""",
+                (marca, len(marca), len(prefixo), prefixo, marca),
+            ):
+                tamanhos[pasta] = tamanhos.get(pasta, 0) + int(total)
+        # Uma pasta de programa dentro de outra (ex.: .vscode dentro de .minecraft) conta só na de fora.
+        ordenadas = sorted(tamanhos, key=len)
+        de_fora = {p: t for p, t in tamanhos.items()
+                   if not any(p != q and p.lower().startswith(q.lower() + os.sep) for q in ordenadas)}
+        return dict(sorted(de_fora.items(), key=lambda par: par[1], reverse=True))
 
     def remover_arquivo(self, caminho: str) -> sqlite3.Row | None:
         """Tira 1 arquivo do índice e devolve a linha que estava lá."""

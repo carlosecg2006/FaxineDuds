@@ -22,6 +22,14 @@ def prefixo_da_pasta(pasta: str | Path) -> str:
     return str(Path(pasta).resolve()).rstrip("\\/") + os.sep
 
 
+def excluir_programas(pasta: str | Path, nomes: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    """Pastas de programa (.minecraft, .vscode...) cujo conteúdo o Raio-X não lista.
+    Se a própria pasta pedida já é uma delas (ex.: D:\\.minecraft), olha dentro dela de propósito."""
+    nomes = config.PASTAS_DE_PROGRAMA if nomes is None else nomes
+    partes = {p.casefold() for p in Path(pasta).resolve().parts}
+    return tuple(n for n in nomes if n.casefold() not in partes)
+
+
 # --- duplicados -----------------------------------------------------------
 
 
@@ -94,7 +102,7 @@ def encontrar_duplicados(
 
     # Etapa 1: tamanho (feita no SQL) + conferência de que o índice não está velho.
     candidatos = []
-    for linha in indice.candidatos_duplicados(prefixo_da_pasta(pasta)):
+    for linha in indice.candidatos_duplicados(prefixo_da_pasta(pasta), excluir_programas(pasta)):
         if _ainda_igual(linha):
             candidatos.append(linha)
         else:
@@ -184,11 +192,11 @@ def pesados(
     minimo: int = config.PESADO_MINIMO,
 ) -> list[sqlite3.Row]:
     """Os maiores arquivos com pelo menos `minimo` bytes (padrão 100 MB)."""
-    return indice.maiores(prefixo_da_pasta(pasta), limite, minimo)
+    return indice.maiores(prefixo_da_pasta(pasta), limite, minimo, excluir_programas(pasta))
 
 
 def totais_por_categoria(indice: Indice, pasta: str | Path) -> list[sqlite3.Row]:
-    return indice.totais_por_categoria(prefixo_da_pasta(pasta))
+    return indice.totais_por_categoria(prefixo_da_pasta(pasta), excluir_programas(pasta))
 
 
 @dataclass
@@ -201,13 +209,13 @@ class Lixo:
         return sum(l["tamanho"] for l in self.temporarios)
 
 
-def _temporarios(indice: Indice, prefixo: str) -> list[sqlite3.Row]:
-    return indice.temporarios(prefixo, config.TEMP_EXTENSOES, config.TEMP_PREFIXOS, config.TEMP_NOMES)
+def _temporarios(indice: Indice, prefixo: str, excluir: tuple[str, ...] = ()) -> list[sqlite3.Row]:
+    return indice.temporarios(prefixo, config.TEMP_EXTENSOES, config.TEMP_PREFIXOS, config.TEMP_NOMES, excluir)
 
 
 def lixo(indice: Indice, pasta: str | Path) -> Lixo:
-    prefixo = prefixo_da_pasta(pasta)
-    return Lixo(vazios=indice.arquivos_vazios(prefixo), temporarios=_temporarios(indice, prefixo))
+    prefixo, excluir = prefixo_da_pasta(pasta), excluir_programas(pasta)
+    return Lixo(vazios=indice.arquivos_vazios(prefixo, excluir), temporarios=_temporarios(indice, prefixo, excluir))
 
 
 def extensao_errada(indice: Indice, pasta: str | Path) -> list[sqlite3.Row]:
@@ -216,10 +224,10 @@ def extensao_errada(indice: Indice, pasta: str | Path) -> list[sqlite3.Row]:
     A regra é aplicada agora sobre `tipo_real` + `extensao`, então melhorias em
     `tipos.extensao_confere` valem sem precisar reindexar.
     """
-    prefixo = prefixo_da_pasta(pasta)
-    temporarios = {l["id"] for l in _temporarios(indice, prefixo)}
+    prefixo, excluir = prefixo_da_pasta(pasta), excluir_programas(pasta)
+    temporarios = {l["id"] for l in _temporarios(indice, prefixo, excluir)}
     return [
-        l for l in indice.todos(prefixo)
+        l for l in indice.todos(prefixo, excluir)
         if l["id"] not in temporarios and l["tipo_real"]
         and not extensao_confere(l["tipo_real"], l["extensao"])
     ]
@@ -231,11 +239,12 @@ def extensao_errada(indice: Indice, pasta: str | Path) -> list[sqlite3.Row]:
 def pastas_vazias(pasta: str | Path, bloqueios: Bloqueios | None = None) -> list[str]:
     """Pastas sem nenhum arquivo, nem em subpastas. Lista só a de cima de cada árvore vazia.
 
-    Pastas bloqueadas, links e pastas que não dá para ler contam como "não vazias"
-    (na dúvida, não sugerimos nada).
+    Pastas bloqueadas, pastas de programa (.minecraft...), links e pastas que não dá para ler
+    contam como "não vazias" (na dúvida, não sugerimos nada).
     """
     bloqueios = bloqueios or Bloqueios()
     encontradas: list[str] = []
+    programas = {n.casefold() for n in excluir_programas(pasta)}
 
     def vazia(caminho: str) -> bool:
         try:
@@ -250,7 +259,7 @@ def pastas_vazias(pasta: str | Path, bloqueios: Bloqueios | None = None) -> list
             if e.is_symlink() or (eh_juncao and eh_juncao()):
                 tudo_vazio = False
             elif e.is_dir(follow_symlinks=False):
-                if bloqueios.bloqueada(e.path) or not vazia(e.path):
+                if bloqueios.bloqueada(e.path) or e.name.casefold() in programas or not vazia(e.path):
                     tudo_vazio = False
                 else:
                     subpastas_vazias.append(e.path)

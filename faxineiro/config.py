@@ -85,8 +85,18 @@ BLOCO_MARCADORES: tuple[str, ...] = (  # se a pasta tem um destes (arquivo ou pa
     ".idea", ".vscode", "steam_appid.txt",
 )
 BLOCO_PADROES: tuple[str, ...] = ("*.sln", "*.csproj", "*.vcxproj", "*.xcodeproj", "*.sav", "*.save")
+# Pastas de programa dentro da pasta do usuário e do D: (jogos, editores, IAs...). São do programa:
+# o Raio-X não lista o que tem dentro (duplicados entre versões do jogo são normais), o "espaco"
+# mostra só o total de cada uma, e organizar nunca mexe nelas.
+PASTAS_DE_PROGRAMA: tuple[str, ...] = (
+    ".minecraft", "curseforge", ".tlauncher", ".lunarclient", ".vscode", ".vscode-insiders",
+    ".cursor", ".gemini", ".claude", ".ollama", ".codex", ".continue", ".android", ".gradle",
+    ".m2", ".nuget", ".cargo", ".rustup", ".dotnet", ".npm", ".conda", ".cache", ".ipython",
+    ".jupyter", "anaconda3", "miniconda3",
+)
 BLOCO_NOMES_DE_PASTA: tuple[str, ...] = (  # a própria pasta, pelo nome, já é bloco
     "Saved Games", "My Games", "SaveGames", "Saves", "steamapps", "node_modules", "site-packages",
+    *PASTAS_DE_PROGRAMA,
 )
 
 # Pastas sincronizadas com a nuvem: nunca organizar (mover para fora APAGA o arquivo da nuvem).

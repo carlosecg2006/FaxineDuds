@@ -33,6 +33,7 @@ from .scanner import Progresso, escanear
 
 LIMITE_GRUPOS = 15  # no PC real podem ser milhares: mostra os que mais liberam espaço
 LIMITE_LISTA = 25
+LIMITE_PROGRAMAS = 12  # no "espaco": as pastas de programa maiores, o resto só somado
 
 
 def _pasta_legivel(pasta: Path) -> int | None:
@@ -124,6 +125,14 @@ def cmd_espaco(args: argparse.Namespace) -> int:
             _titulo(f"Unidade {e.unidade}  ({formatar_bytes(e.total)}; {formatar_bytes(e.livre)} livres)")
             print(f"  Usado no disco:                         {formatar_bytes(e.usado):>10}")
             print(f"  Explicado pelo índice (seus arquivos):  {formatar_bytes(e.explicado):>10}  {pct(e.explicado)}")
+            if e.programas:
+                print(f"    dentro disso, pastas de programa ({formatar_bytes(sum(e.programas.values()))};"
+                      " o Raio-X não lista o que tem dentro):")
+                for caminho, tamanho in list(e.programas.items())[:LIMITE_PROGRAMAS]:
+                    print(f"      {formatar_bytes(tamanho):>10}  {caminho}")
+                if len(e.programas) > LIMITE_PROGRAMAS:
+                    resto = list(e.programas.values())[LIMITE_PROGRAMAS:]
+                    print(f"      {formatar_bytes(sum(resto)):>10}  ... e mais {len(resto)} pastas menores")
             for nome, tamanho in e.sistema.items():
                 print(f"  {ARQUIVOS_DE_SISTEMA[nome][:38]:<38} {formatar_bytes(tamanho):>10}  {pct(tamanho)}")
             for rotulo, tamanho in e.backups.items():
