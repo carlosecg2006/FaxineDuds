@@ -9,6 +9,8 @@ from pathlib import Path
 
 import puremagic
 
+from .disco import abrir, no_disco
+
 TAMANHO_CABECALHO = 8192
 
 _CATEGORIAS: dict[str, tuple[str, ...]] = {
@@ -71,7 +73,7 @@ def _normalizar_extensao(ext: str) -> str:
 def _tipo_ooxml(caminho: Path) -> str | None:
     """Zip com [Content_Types].xml é documento do Office (docx/xlsx/pptx)."""
     try:
-        with zipfile.ZipFile(caminho) as z:
+        with zipfile.ZipFile(no_disco(caminho)) as z:
             dados = z.read("[Content_Types].xml")
     except (zipfile.BadZipFile, KeyError, OSError, RuntimeError):
         return None
@@ -115,7 +117,7 @@ def detectar_tipo(caminho: str | Path) -> TipoDetectado:
     caminho = Path(caminho)
     extensao = _normalizar_extensao(caminho.suffix)
 
-    with open(caminho, "rb") as f:
+    with abrir(caminho) as f:
         cabecalho = f.read(TAMANHO_CABECALHO)
 
     if not cabecalho:

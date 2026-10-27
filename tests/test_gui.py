@@ -279,7 +279,8 @@ def test_explorador_pede_confirmacao_para_abrir_programa(janela, monkeypatch, ar
 
 def test_explorador_menu_do_botao_direito(janela):
     nomes = [t for t, _ in janela.telas[1].acoes_do_menu()]
-    assert nomes == ["Abrir", "Mostrar na pasta", "Descrever com IA", "Converter…", "Mandar para quarentena…"]
+    assert nomes == ["Abrir", "Mostrar na pasta", "Descrever com IA", "Converter…", "Mandar para quarentena…",
+                     "Mover para outra unidade…"]
 
 
 def test_explorador_manda_para_quarentena(janela, amb, qtbot, monkeypatch, area):

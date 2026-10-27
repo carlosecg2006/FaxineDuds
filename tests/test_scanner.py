@@ -113,7 +113,7 @@ def test_varredura_fica_registrada(pasta, indice):
 
 @pytest.mark.skipif(os.name != "nt", reason="limite de 260 caracteres é do Windows")
 def test_caminho_maior_que_260_nao_trava(tmp_path, indice):
-    """Sem LongPathsEnabled o Windows não abre a pasta: o scanner avisa e segue (ver Fase 7)."""
+    """Sem LongPathsEnabled o Windows recusa caminhos normais; com o prefixo \\\\?\\ (Fase 7B) indexa."""
     base = tmp_path / "longo"
     base.mkdir()
     (base / "curto.txt").write_text("ok", encoding="utf-8")
@@ -126,9 +126,9 @@ def test_caminho_maior_que_260_nao_trava(tmp_path, indice):
 
     p = escanear(base, indice)
     assert indice.buscar(str(base / "curto.txt")) is not None
-    indexou_o_fundo = indice.buscar(str(fundo / "fundo.txt")) is not None
-    avisou = any("Caminho longo demais" in a for a in p.avisos)
-    assert indexou_o_fundo or avisou  # com LongPathsEnabled=1 indexa; sem, avisa claramente
+    linha = indice.buscar(str(fundo / "fundo.txt"))
+    assert linha is not None, p.avisos
+    assert linha["tipo_real"] == "texto" and p.erros == 0
 
 
 def test_pasta_inexistente(tmp_path, indice):

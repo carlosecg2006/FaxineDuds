@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import Bloqueios
+from .disco import no_disco, sem_prefixo
 from .indice import Indice, Registro
 from .tipos import TipoDetectado, detectar_tipo, tipo_pela_extensao
 
@@ -41,6 +42,8 @@ def _iso(timestamp: float) -> str:
 
 
 # Pastas no Windows (sem LongPathsEnabled) só funcionam até 248 caracteres; arquivos até 260.
+# Desde a Fase 7B o scanner fala com o Windows usando o prefixo \\?\ (disco.no_disco) e indexa
+# esses caminhos também; o aviso só aparece se mesmo assim o Windows recusar.
 LIMITE_PASTA_WINDOWS = 248
 
 
@@ -58,12 +61,13 @@ def _eh_link(entrada: os.DirEntry) -> bool:
 
 def _percorrer(
     raiz: Path, bloqueios: Bloqueios, progresso: Progresso, pastas_com_erro: list[str]
-) -> Iterator[tuple[os.DirEntry, os.stat_result]]:
+) -> Iterator[tuple[str, os.stat_result]]:
+    """Devolve (caminho sem prefixo, stat) de cada arquivo."""
     pilha = [raiz]
     while pilha:
         pasta = pilha.pop()
         try:
-            with os.scandir(pasta) as entradas:
+            with os.scandir(no_disco(pasta)) as entradas:
                 lista = list(entradas)
         except OSError as erro:
             progresso.erros += 1
@@ -77,21 +81,22 @@ def _percorrer(
             continue
 
         for entrada in lista:
+            caminho = sem_prefixo(entrada.path)
             try:
                 if _eh_link(entrada):
                     progresso.ignorados += 1
                     continue
                 if entrada.is_dir(follow_symlinks=False):
-                    if bloqueios.bloqueada(entrada.path):
+                    if bloqueios.bloqueada(caminho):
                         progresso.ignorados += 1
-                        progresso.pastas_ignoradas.append(entrada.path)
+                        progresso.pastas_ignoradas.append(caminho)
                     else:
-                        pilha.append(Path(entrada.path))
+                        pilha.append(Path(caminho))
                 elif entrada.is_file(follow_symlinks=False):
-                    yield entrada, entrada.stat(follow_symlinks=False)
+                    yield caminho, entrada.stat(follow_symlinks=False)
             except OSError as erro:
                 progresso.erros += 1
-                progresso.avisos.append(f"Erro em {entrada.path}: {erro.strerror}")
+                progresso.avisos.append(f"Erro em {caminho}: {erro.strerror}")
 
 
 def _montar_registro(
@@ -147,7 +152,7 @@ def indexar_arquivo(
 ) -> None:
     """Coloca (ou atualiza) um único arquivo no índice, sem varrer a pasta inteira."""
     caminho = str(Path(caminho).resolve())
-    st = os.stat(caminho)
+    st = os.stat(no_disco(caminho))
     indice.gravar(_montar_registro(caminho, st, pasta_raiz, aparelho, detector), 0, _agora())
 
 
@@ -184,12 +189,11 @@ def escanear(
         if ao_progredir:
             ao_progredir(progresso)
 
-    for entrada, st in _percorrer(raiz, bloqueios, progresso, pastas_com_erro):
+    for caminho, st in _percorrer(raiz, bloqueios, progresso, pastas_com_erro):
         if parar():
             progresso.cancelado = True
             break
         progresso.varridos += 1
-        caminho = entrada.path
         assinatura = (st.st_size, st.st_mtime_ns)
         anterior = anteriores.get(caminho)
 

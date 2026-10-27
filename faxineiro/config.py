@@ -41,24 +41,31 @@ NOMES_BLOQUEADOS_NA_RAIZ: tuple[str, ...] = (
     "$WINDOWS.~TMP", "$WinREAgent", "Windows.old", "$Windows.~BT", "$Windows.~WS",
 )
 
-# Fase 7A — regra 5 dividida: LER o PC real é permitido nestas áreas; MUDAR o disco continua
-# travado na pasta_teste (dentro_da_pasta_teste), até o Carlos decidir.
+# Fase 7A — regra 5 dividida: LER o PC real é permitido nestas áreas.
+# Fase 7B — MUDAR o disco nelas só com o "modo PC real" ligado (areas_de_acao); desligado, só a pasta_teste.
 AREAS_DE_LEITURA: tuple[Path, ...] = (Path(r"C:\Users\Carlos Eduardo"), Path("D:\\"))
 
 
-# Quarentena (Fase 3)
+# Quarentena (Fase 3; uma por unidade desde a Fase 7B)
 NOME_QUARENTENA = "_quarentena"
+PASTA_DO_USUARIO = Path(os.environ.get("USERPROFILE") or Path.home())
+UNIDADE_DO_SISTEMA = os.environ.get("SystemDrive", "C:")
 
 
-def pasta_quarentena(arquivo: str | Path, modo_dev: bool = True) -> Path:
+def pasta_quarentena(arquivo: str | Path) -> Path:
     """Onde fica a quarentena de um arquivo: sempre na MESMA unidade (mover = renomear, sem cópia).
 
-    Durante o desenvolvimento (regra 5) é `pasta_teste\\_quarentena`; na Fase 7 passa a ser
-    a raiz da unidade do arquivo, ex.: `D:\\_quarentena`.
+    - dentro da pasta_teste: `pasta_teste\\_quarentena` (desenvolvimento e testes);
+    - na unidade do Windows (C:): `C:\\Users\\<usuário>\\_quarentena` — a raiz do C:\\ é protegida
+      pelo Windows (pediria administrador);
+    - nas outras unidades: a raiz, ex.: `D:\\_quarentena`.
     """
-    if modo_dev:
+    alvo = Path(arquivo).resolve()
+    if dentro_da_pasta_teste(alvo, PASTA_TESTE):
         return PASTA_TESTE / NOME_QUARENTENA
-    return Path(Path(arquivo).resolve().anchor) / NOME_QUARENTENA
+    if alvo.drive.casefold() == UNIDADE_DO_SISTEMA.casefold():
+        return PASTA_DO_USUARIO / NOME_QUARENTENA
+    return Path(alvo.anchor) / NOME_QUARENTENA
 
 
 # IA local (Fase 4) — ajustada para PC com 4 GB de RAM.
@@ -153,10 +160,24 @@ class Bloqueios:
 
 
 def dentro_da_pasta_teste(pasta: str | Path, pasta_teste: Path = PASTA_TESTE) -> bool:
-    """Trava de tudo que MUDA o disco (regra 5): só aceita pastas dentro de pasta_teste."""
-    alvo = Path(pasta).resolve()
-    base = pasta_teste.resolve()
+    """`pasta` está dentro de `pasta_teste` (ou é ela). Serve para qualquer área.
+    Sem diferenciar maiúsculas (o Windows não diferencia)."""
+    alvo = Path(os.path.normcase(Path(pasta).resolve()))
+    base = Path(os.path.normcase(Path(pasta_teste).resolve()))
     return alvo == base or base in alvo.parents
+
+
+def areas_de_acao(pc_real: bool = False) -> tuple[Path, ...]:
+    """Regra 5 (Fase 7B): onde as AÇÕES podem mudar o disco. Modo PC real desligado = só a pasta_teste.
+    Mesmo ligado, pastas bloqueadas, pastas-bloco, de programa e da nuvem continuam proibidas
+    (protecoes.Protecoes.motivo_para_nao_mexer)."""
+    return (PASTA_TESTE, *AREAS_DE_LEITURA) if pc_real else (PASTA_TESTE,)
+
+
+def area_de(caminho: str | Path, areas: tuple[Path, ...] | list[Path]) -> Path | None:
+    """A área mais específica que contém `caminho` (pasta_teste ganha do D:\\); None = fora de todas."""
+    dentro = [Path(a).resolve() for a in areas if dentro_da_pasta_teste(caminho, a)]
+    return max(dentro, key=lambda a: len(a.parts)) if dentro else None
 
 
 def pode_ler(pasta: str | Path, areas: tuple[Path, ...] | None = None) -> bool:

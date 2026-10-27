@@ -7,7 +7,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSAO_ESQUEMA = 4
+VERSAO_ESQUEMA = 5
 
 # Migrações aplicadas em ordem: a chave é a versão que o banco passa a ter.
 _MIGRACOES: dict[int, str] = {
@@ -50,6 +50,12 @@ _MIGRACOES: dict[int, str] = {
     ALTER TABLE arquivos ADD COLUMN revisar INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE arquivos ADD COLUMN pasta_sugerida TEXT;
     ALTER TABLE operacoes ADD COLUMN pastas_criadas TEXT;  -- JSON: pastas que o organizar criou
+    """,
+    # Fase 7B: mover para outra unidade (cópia num temporário + original para a quarentena).
+    5: """
+    ALTER TABLE operacoes ADD COLUMN temporario TEXT;  -- cópia em andamento no destino
+    ALTER TABLE operacoes ADD COLUMN quarentena TEXT;  -- onde o original fica na quarentena da unidade dele
+    CREATE INDEX IF NOT EXISTS idx_operacoes_ref ON operacoes (ref_operacao);
     """,
 }
 
@@ -346,18 +352,29 @@ class Indice:
     def registrar_operacao(
         self, *, lote_id: int, tipo: str, origem: str, destino: str, pasta_raiz: str | None,
         tamanho: int | None, hash_completo: str | None, ref_operacao: int | None, agora: str,
-        pastas_criadas: str | None = None,
+        pastas_criadas: str | None = None, temporario: str | None = None, quarentena: str | None = None,
+        estado: str = "em_andamento", situacao: str | None = None,
     ) -> int:
         """Grava a intenção ANTES de mexer no disco (estado em_andamento) e confirma na hora."""
         cur = self.con.execute(
             """INSERT INTO operacoes (lote_id, tipo, origem, destino, pasta_raiz, tamanho,
-                   hash_completo, estado, ref_operacao, criado_em, pastas_criadas)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'em_andamento', ?, ?, ?)""",
-            (lote_id, tipo, origem, destino, pasta_raiz, tamanho, hash_completo, ref_operacao, agora,
-             pastas_criadas),
+                   hash_completo, estado, situacao, ref_operacao, criado_em, concluido_em,
+                   pastas_criadas, temporario, quarentena)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (lote_id, tipo, origem, destino, pasta_raiz, tamanho, hash_completo, estado, situacao,
+             ref_operacao, agora, None if estado == "em_andamento" else agora, pastas_criadas,
+             temporario, quarentena),
         )
         self.con.commit()
         return cur.lastrowid
+
+    def gravar_hash_operacao(self, op_id: int, hash_completo: str) -> None:
+        self.con.execute("UPDATE operacoes SET hash_completo = ? WHERE id = ?", (hash_completo, op_id))
+        self.con.commit()
+
+    def operacoes_ligadas(self, op_id: int) -> list[sqlite3.Row]:
+        """Operações que apontam para `op_id` (ex.: o original de um "mover para outra unidade")."""
+        return self.con.execute("SELECT * FROM operacoes WHERE ref_operacao = ? ORDER BY id", (op_id,)).fetchall()
 
     def concluir_operacao(self, op_id: int, estado: str, agora: str, erro: str | None = None,
                           situacao: str | None = None) -> None:
@@ -379,12 +396,13 @@ class Indice:
         ).fetchall()
 
     def itens_desfaziveis(self, *, item: int | None = None, lote: int | None = None) -> list[sqlite3.Row]:
-        """O que dá para desfazer: arquivos na quarentena, arquivos movidos pelo organizar
-        e pastas que o organizar esvaziou e removeu."""
+        """O que dá para desfazer: arquivos na quarentena, arquivos movidos pelo organizar,
+        pastas que o organizar esvaziou e removeu e mudanças de unidade (Fase 7B)."""
         sql = """SELECT * FROM operacoes WHERE
                  ((tipo = 'quarentena' AND situacao = 'na_quarentena')
                   OR (tipo = 'organizar' AND situacao = 'organizado')
-                  OR (tipo = 'remover_pasta' AND situacao = 'removida'))"""
+                  OR (tipo = 'remover_pasta' AND situacao = 'removida')
+                  OR (tipo = 'mover_unidade' AND situacao = 'movido'))"""
         args: list[int] = []
         if item is not None:
             sql += " AND id = ?"

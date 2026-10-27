@@ -109,6 +109,23 @@ class Protecoes:
             return f"dentro de pasta-bloco {bloco[0].name} — {bloco[1]}"
         return None
 
+    def motivo_para_nao_mexer(self, caminho: Path, area: Path) -> str | None:
+        """Fase 7B — vale para TODA ação que muda o disco (quarentena, mover de unidade, converter).
+        None = pode. Olha da `area` para baixo: a própria raiz da área não conta como pasta-bloco
+        (C:\\Users\\<usuário> tem .vscode, o D:\\ tem instaladores .exe soltos)."""
+        caminho, area = Path(caminho), Path(area)
+        abaixo = [p for p in caminho.parents if area in p.parents]  # do arquivo para cima, sem a área
+        if any(self.bloqueios.bloqueada(p) for p in abaixo):
+            return "dentro de pasta bloqueada (regra 3): não mexo"
+        servico = self.nuvem(caminho)
+        if servico:
+            return f"pasta sincronizada com a nuvem ({servico}): não mexo"
+        for pasta in reversed(abaixo):
+            motivo = self.motivo_bloco(pasta)
+            if motivo:
+                return f"dentro de pasta-bloco {pasta.name} — {motivo}: não mexo"
+        return None
+
     def destino_proibido(self, destino: Path, base: Path) -> str | None:
         """O destino também não pode ser pasta da nuvem nem bloqueada (de `base` para baixo)."""
         servico = self.nuvem(destino)
@@ -120,3 +137,29 @@ class Protecoes:
             if self.bloqueios.bloqueada(pasta):
                 return "destino em pasta bloqueada"
         return None
+
+
+# --- Fase 7B: a mesma trava para toda ação que muda o disco --------------------------
+
+
+def protecoes_para(area: Path) -> Protecoes:
+    """Na pasta_teste (e em pastas de teste), os bloqueios de sempre; no PC real, também a pasta
+    do próprio app (índice, .venv, ffmpeg...)."""
+    no_pc = (config.area_de(area, config.AREAS_DE_LEITURA) is not None
+             and config.area_de(area, (config.PASTA_TESTE,)) is None)
+    return Protecoes(bloqueios=config.bloqueios_do_pc() if no_pc else Bloqueios())
+
+
+def fora_da_area(caminho: Path, areas: tuple[Path, ...]) -> str:
+    if config.area_de(caminho, config.AREAS_DE_LEITURA) is not None:
+        return "fora da área permitida: ligue o modo PC real para mexer aqui"
+    return f"fora da área permitida ({', '.join(str(a) for a in areas)})"
+
+
+def motivo_para_acao(caminho: Path, areas: tuple[Path, ...]) -> str | None:
+    """None = a ação pode mexer em `caminho`. Fora das áreas, pasta bloqueada, nuvem, pasta-bloco
+    e pasta de programa: nunca."""
+    area = config.area_de(caminho, areas)
+    if area is None:
+        return fora_da_area(caminho, areas)
+    return protecoes_para(area).motivo_para_nao_mexer(Path(caminho), area)

@@ -24,6 +24,7 @@ from ... import raiox
 from ...config import MB, PESADO_MINIMO, PESADO_MINIMO_TESTE
 from ...formato import formatar_bytes, relativo
 from ..dialogos import confirmar_previa, rotulo_flexivel
+from ..mover import mover_para_outra_unidade
 
 CAMINHO = Qt.ItemDataRole.UserRole
 MANTER = Qt.ItemDataRole.UserRole + 1  # no item do grupo: caminho da cópia escolhida para ficar
@@ -84,6 +85,13 @@ class TelaFaxina(QWidget):
         marcar.clicked.connect(self.marcar_copias)
         baixo.addWidget(marcar)
         baixo.addStretch(1)
+        self.botao_mover = QPushButton("Mover para outra unidade…")
+        self.botao_mover.setToolTip("Pesados: copia para outra unidade (ex.: C: → D:), confere o hash "
+                                    "e manda o original para a quarentena")
+        self.botao_mover.clicked.connect(lambda: self.mover_pesados())
+        self.botao_mover.setVisible(False)
+        self.abas.currentChanged.connect(lambda i: self.botao_mover.setVisible(self.abas.widget(i) is self.pesados))
+        baixo.addWidget(self.botao_mover)
         self.botao_quarentena = QPushButton("Mandar para quarentena")
         self.botao_quarentena.clicked.connect(self.mandar_para_quarentena)
         baixo.addWidget(self.botao_quarentena)
@@ -146,6 +154,17 @@ class TelaFaxina(QWidget):
     def ao_mostrar(self) -> None:
         pass
 
+    def pasta_mudou(self) -> None:
+        for arvore in (self.duplicados, self.pesados, self.lixo):
+            arvore.clear()
+        self.resumo.setText(f"Pasta: {self.amb.pasta}. Clique em Analisar.")
+
+    def mover_pesados(self, escolher_destino=None) -> bool:
+        """Fase 7B: os pesados marcados vão para outra unidade."""
+        caminhos = [i.data(0, CAMINHO) for i in self._marcados_em(self.pesados)]
+        return mover_para_outra_unidade(self.amb, self, caminhos, escolher_destino=escolher_destino,
+                                        ao_terminar=lambda r: self.analisar())
+
     # --- ação --------------------------------------------------------------------
 
     def escolher_manter(self, grupo: QTreeWidgetItem, escolhida: QTreeWidgetItem) -> None:
@@ -171,7 +190,10 @@ class TelaFaxina(QWidget):
                     item.setCheckState(0, Qt.CheckState.Checked)
 
     def marcados(self) -> list[QTreeWidgetItem]:
-        arvore = self.abas.currentWidget()
+        return self._marcados_em(self.abas.currentWidget())
+
+    @staticmethod
+    def _marcados_em(arvore: QTreeWidget) -> list[QTreeWidgetItem]:
         itens = []
 
         def visitar(item: QTreeWidgetItem) -> None:

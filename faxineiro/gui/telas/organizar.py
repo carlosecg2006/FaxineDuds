@@ -64,6 +64,12 @@ class TelaOrganizar(QWidget):
     def ao_mostrar(self) -> None:
         pass
 
+    def pasta_mudou(self) -> None:
+        """Trocou a pasta: o plano antigo não vale mais."""
+        self.plano = None
+        self.botao_aplicar.setEnabled(False)
+        self.resumo.setText(f"Pasta: {self.amb.pasta}. Clique em Sugerir.")
+
     def sugerir(self) -> None:
         pasta, refazer = self.amb.pasta, self.refazer.isChecked()
         try:

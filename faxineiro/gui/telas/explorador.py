@@ -30,6 +30,7 @@ from ...formato import formatar_bytes
 from ...ia import ClienteOllama, EnderecoNaoLocal
 from ..dialogos import confirmar_previa
 from ..modelos import ModeloArquivos
+from ..mover import mover_para_outra_unidade
 from ..sistema import abrir_arquivo, mostrar_na_pasta
 
 PAPEL_CAMINHO = Qt.ItemDataRole.UserRole
@@ -48,6 +49,8 @@ class TelaExplorador(QWidget):
         self.arvore.setColumnWidth(0, 200)
         self.arvore.itemExpanded.connect(self._expandir)
         self.arvore.currentItemChanged.connect(self._pasta_escolhida)
+        self.arvore.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.arvore.customContextMenuRequested.connect(self._menu_pasta)
         divisor.addWidget(self.arvore)
 
         centro = QWidget()
@@ -104,6 +107,12 @@ class TelaExplorador(QWidget):
     def ao_mostrar(self) -> None:
         self.recarregar_arvore()
 
+    def pasta_mudou(self) -> None:
+        self.busca.blockSignals(True)
+        self.busca.clear()
+        self.busca.blockSignals(False)
+        self.recarregar_arvore()
+
     # --- árvore (filhas carregadas só ao expandir) ---------------------------------
 
     def _item(self, pai, pasta: Path, nome: str, bytes_: int) -> QTreeWidgetItem:
@@ -114,7 +123,7 @@ class TelaExplorador(QWidget):
 
     def recarregar_arvore(self) -> None:
         self.arvore.clear()
-        raiz = self._item(self.arvore, self.amb.pasta, self.amb.pasta.name, 0)
+        raiz = self._item(self.arvore, self.amb.pasta, self.amb.pasta.name or str(self.amb.pasta), 0)
         raiz.setExpanded(True)
         self.arvore.setCurrentItem(raiz)
 
@@ -259,7 +268,7 @@ class TelaExplorador(QWidget):
         if not formatos_possiveis(l["caminho"], ferramentas):
             self.amb.mensagem("Por enquanto só converto imagens, áudio e vídeo.")
             return
-        dialogo = DialogoConversao(Path(l["caminho"]), self.amb.pasta, self.amb.limite, ferramentas, self)
+        dialogo = DialogoConversao(Path(l["caminho"]), self.amb.pasta, self.amb.areas, ferramentas, self)
         aceitou = escolher(dialogo) if escolher else dialogo.exec() == DialogoConversao.DialogCode.Accepted
         if not aceitou or dialogo.plano is None:
             return
@@ -282,10 +291,38 @@ class TelaExplorador(QWidget):
 
         self.amb.rodar("Convertendo", trabalho, pronto)
 
+    def mover_para_unidade(self, escolher_destino=None) -> bool:
+        """Fase 7B: o arquivo selecionado vai para outra unidade (cópia conferida, original na quarentena)."""
+        l = self.selecionado()
+        if l is None:
+            return False
+        return mover_para_outra_unidade(self.amb, self, [l["caminho"]], escolher_destino=escolher_destino,
+                                        ao_terminar=lambda r: self._recarregar_lista())
+
+    def mover_pasta_para_unidade(self, pasta: Path | None = None, escolher_destino=None) -> bool:
+        """A pasta INTEIRA vai para outra unidade (botão direito na árvore de pastas)."""
+        if pasta is None:
+            item = self.arvore.currentItem()
+            if item is None or item.data(0, PAPEL_CAMINHO) is None:
+                return False
+            pasta = Path(item.data(0, PAPEL_CAMINHO))
+        return mover_para_outra_unidade(self.amb, self, [pasta], escolher_destino=escolher_destino,
+                                        ao_terminar=lambda r: self.recarregar_arvore())
+
     def acoes_do_menu(self) -> list[tuple[str, object]]:
         return [("Abrir", self.abrir), ("Mostrar na pasta", self.mostrar_na_pasta),
                 ("Descrever com IA", self.descrever_com_ia), ("Converter…", self.converter),
-                ("Mandar para quarentena…", self.mandar_para_quarentena)]
+                ("Mandar para quarentena…", self.mandar_para_quarentena),
+                ("Mover para outra unidade…", self.mover_para_unidade)]
+
+    def _menu_pasta(self, posicao) -> None:
+        item = self.arvore.itemAt(posicao)
+        if item is None or item.data(0, PAPEL_CAMINHO) is None:
+            return
+        self.arvore.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Mover esta pasta para outra unidade…", self.mover_pasta_para_unidade)
+        menu.exec(self.arvore.viewport().mapToGlobal(posicao))
 
     def _menu(self, posicao) -> None:
         if not self.tabela.indexAt(posicao).isValid():

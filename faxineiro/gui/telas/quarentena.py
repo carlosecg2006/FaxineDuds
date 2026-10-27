@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...formato import formatar_bytes, ha_quanto_tempo, relativo
+from ...quarentena import Quarentena
 from ..dialogos import confirmar_esvaziar, confirmar_previa, perguntar_conflito, rotulo_flexivel
 
 LOTE = Qt.ItemDataRole.UserRole
@@ -64,8 +67,14 @@ class TelaQuarentena(QWidget):
                                                 ha_quanto_tempo(op["concluido_em"])])
                 filho.setData(0, ITEM, op["id"])
         total = sum(op["tamanho"] or 0 for op in itens)
+        por_unidade: dict[str, int] = {}  # Fase 7B: cada unidade tem a sua quarentena
+        for op in itens:
+            raiz = Quarentena._raiz_da_quarentena(Path(op["destino"])) or Path(op["destino"]).parent
+            por_unidade[str(raiz)] = por_unidade.get(str(raiz), 0) + (op["tamanho"] or 0)
+        detalhe = "".join(f"<br>• {onde}: {formatar_bytes(b)}" for onde, b in sorted(por_unidade.items()))
         self.resumo.setText(f"<b>Espaço ocupado pela quarentena: {formatar_bytes(total)}</b> em {len(itens)} arquivo(s). "
-                            "Nada aqui foi apagado: dá para desfazer.")
+                            "Nada aqui foi apagado: dá para desfazer. O espaço de cada unidade só é liberado "
+                            f"quando você esvaziar.{detalhe}")
         self.botao_esvaziar.setEnabled(bool(itens))
 
     def desfazer(self) -> None:

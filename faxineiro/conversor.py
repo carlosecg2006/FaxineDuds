@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import config
-from .config import dentro_da_pasta_teste
+from .protecoes import motivo_para_acao
 from .tipos import detectar_tipo
 
 # --- formatos --------------------------------------------------------------------
@@ -44,6 +44,10 @@ VIDEO = {
     "mkv": ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "160k"],
 }
 EXTRAIR_AUDIO = "audio"  # alvo especial: tira o áudio do vídeo
+# O temporário ".faxineiro-convertendo-xxxxxxxx" fica na mesma pasta e soma ~35 caracteres: com
+# folga, todo caminho envolvido cabe nos 260 do Windows sem o prefixo \\?\ (Fase 7B).
+LIMITE_CAMINHO = 200
+
 # Codec de áudio → contêiner onde ele cabe SEM recodificar (cópia rápida).
 CONTEINER_DO_CODEC = {"aac": "m4a", "mp3": "mp3", "opus": "opus", "vorbis": "ogg", "flac": "flac"}
 # Contêiner de vídeo que aceita copiar os fluxos como estão (só troca a "caixa").
@@ -217,20 +221,24 @@ def planejar_conversao(
     formato: str,
     *,
     modo: str = "novo",
-    limite: Path = config.PASTA_TESTE,
+    limite: Path | tuple[Path, ...] = config.PASTA_TESTE,
     ferramentas: Ferramentas | None = None,
 ) -> PlanoConversao:
-    """Monta a prévia. Levanta ConversaoRecusada se não der para converter."""
+    """Monta a prévia. Levanta ConversaoRecusada se não der para converter.
+    `limite`: a área (ou as áreas, no modo PC real) onde é permitido mudar o disco."""
     origem = Path(caminho).resolve()
     if modo not in ("novo", "substituir"):
         raise ValueError("modo deve ser 'novo' ou 'substituir'")
+    if len(str(origem)) > LIMITE_CAMINHO:
+        # O ffmpeg e o Pillow nem sempre aceitam o prefixo \\?\: recusa antes de começar.
+        raise ConversaoRecusada(f"caminho longo demais ({len(str(origem))} caracteres; o conversor aceita até "
+                                f"{LIMITE_CAMINHO}): mova o arquivo para uma pasta mais curta")
     if not origem.is_file():
         raise ConversaoRecusada("arquivo não encontrado")
-    if not dentro_da_pasta_teste(origem, limite):
-        raise ConversaoRecusada(f"fora da área permitida ({limite})")
-    limite_r = Path(limite).resolve()
-    if any(config.Bloqueios().bloqueada(p) for p in origem.parents if limite_r in p.parents):
-        raise ConversaoRecusada("dentro de pasta bloqueada (regra 3): não mexo")
+    areas = (limite,) if isinstance(limite, (str, Path)) else tuple(limite)
+    motivo = motivo_para_acao(origem, tuple(Path(a).resolve() for a in areas))
+    if motivo:
+        raise ConversaoRecusada(motivo)
     ferramentas = ferramentas or localizar_ffmpeg()
     opcoes = {o.formato: o for o in formatos_possiveis(origem, ferramentas)}
     if formato not in opcoes:

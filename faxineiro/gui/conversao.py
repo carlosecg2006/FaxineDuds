@@ -21,7 +21,7 @@ from ..formato import formatar_duracao, relativo
 
 
 class DialogoConversao(QDialog):
-    def __init__(self, arquivo: Path, base: Path, limite: Path, ferramentas: Ferramentas,
+    def __init__(self, arquivo: Path, base: Path, limite: Path | tuple[Path, ...], ferramentas: Ferramentas,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.arquivo, self.base, self.limite, self.ferramentas = Path(arquivo), base, limite, ferramentas

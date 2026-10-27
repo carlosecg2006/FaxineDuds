@@ -1,6 +1,7 @@
-"""Comandos da quarentena: mover, duplicados, listar, desfazer, esvaziar.
+"""Comandos da quarentena: mover, duplicados, listar, desfazer, esvaziar; e mover-unidade (Fase 7B).
 
 Todos mostram a prévia (dry-run) primeiro e só executam depois da confirmação.
+Sem `--pc-real`, só mexem na pasta_teste. Com `--pc-real`, pedem para digitar PC REAL.
 """
 
 from __future__ import annotations
@@ -10,10 +11,13 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from . import config
 from .config import CAMINHO_INDICE, PASTA_TESTE, dentro_da_pasta_teste
 from .formato import formatar_bytes, ha_quanto_tempo, relativo
 from .indice import Indice
 from .quarentena import Plano, Quarentena, Resultado
+
+CONFIRMACAO_PC_REAL = "PC REAL"
 
 
 def _perguntar(texto: str) -> str:
@@ -29,9 +33,27 @@ def _confirmar(texto: str, args: argparse.Namespace) -> bool:
     return _perguntar(f"{texto} (s/n): ").lower() in ("s", "sim")
 
 
+def ligar_pc_real(args: argparse.Namespace) -> bool:
+    """Modo PC real (Fase 7B): só liga digitando PC REAL. Vale só para este comando."""
+    if not getattr(args, "pc_real", False):
+        return False
+    areas = ", ".join(str(a) for a in config.AREAS_DE_LEITURA)
+    print(f"MODO PC REAL: esta ação pode mexer em {areas} (fora da pasta_teste).")
+    print("Pastas bloqueadas, pastas-bloco, de programa, da nuvem e backups continuam proibidas.")
+    if _perguntar(f"Digite {CONFIRMACAO_PC_REAL} para ligar: ") != CONFIRMACAO_PC_REAL:
+        raise SystemExit("Modo PC real NÃO foi ligado. Nada foi feito.")
+    return True
+
+
+def areas(args: argparse.Namespace) -> tuple:
+    return config.areas_de_acao(True) if args.pc_real_ligado else (PASTA_TESTE,)
+
+
 def _abrir(args: argparse.Namespace) -> tuple[Indice, Quarentena]:
+    if not hasattr(args, "pc_real_ligado"):
+        args.pc_real_ligado = ligar_pc_real(args)
     indice = Indice(args.indice)
-    q = Quarentena(indice, limite=PASTA_TESTE)
+    q = Quarentena(indice, limite=areas(args))
     for msg in q.recuperar_diario():
         print(f"[diário] {msg}")
     return indice, q
@@ -44,7 +66,15 @@ def _mostrar_plano(plano: Plano, titulo: str) -> None:
         if p.problema:
             print(f"  {i:>3}. PULA  {origem}  — {p.problema}")
             continue
-        if plano.tipo == "esvaziar":
+        if plano.tipo == "mover_unidade":
+            if p.remover_pasta:
+                print(f"  {i:>3}. remove a pasta (se ficar vazia) {origem}")
+            else:
+                nota = "  (nome trocado: já existe um igual)" if p.renomeado else ""
+                print(f"  {i:>3}. {origem}  →  {p.destino}  ({formatar_bytes(p.tamanho)}){nota}")
+        elif p.quarentenar_copia:
+            print(f"  {i:>3}. a cópia {origem} vai para a quarentena da unidade dela")
+        elif plano.tipo == "esvaziar":
             print(f"  {i:>3}. APAGA {origem}  ({formatar_bytes(p.tamanho)})")
         elif plano.tipo == "restaurar":
             nota = "  (com outro nome: já existe um arquivo lá)" if p.renomeado else ""
@@ -52,7 +82,9 @@ def _mostrar_plano(plano: Plano, titulo: str) -> None:
         else:
             mantem = f"  (fica: {relativo(p.manter, PASTA_TESTE)})" if p.manter else ""
             print(f"  {i:>3}. {origem}  ({formatar_bytes(p.tamanho)}){mantem}")
-    print(f"Total: {len(plano.validos)} arquivo(s), {formatar_bytes(plano.total_bytes)}")
+    print(f"Total: {len(plano.validos)} item(ns), {formatar_bytes(plano.total_bytes)}")
+    for aviso in plano.avisos:
+        print(f"  ! {aviso}")
 
 
 def _mostrar_resultado(r: Resultado, verbo: str) -> None:
@@ -91,6 +123,13 @@ def cmd_mover(args: argparse.Namespace) -> int:
                   "mandar para a quarentena", "na quarentena")
 
 
+def cmd_mover_unidade(args: argparse.Namespace) -> int:
+    from .transferir import planejar_mover_unidade
+
+    return _rodar(args, lambda q: planejar_mover_unidade(q, args.itens, args.para),
+                  f"mover para outra unidade ({args.para})", "movidos com hash conferido")
+
+
 def cmd_duplicados(args: argparse.Namespace) -> int:
     pasta = Path(args.pasta)
     if not dentro_da_pasta_teste(pasta):
@@ -119,6 +158,10 @@ def cmd_listar(args: argparse.Namespace) -> int:
             print("A quarentena está vazia.")
             return 0
         print(f"{'item':>5} {'lote':>5}  {'tamanho':>10}  {'desde':<12}  de onde veio")
+        por_unidade: dict[str, int] = {}
+        for op in itens:
+            onde = str(config.pasta_quarentena(op["origem"]))
+            por_unidade[onde] = por_unidade.get(onde, 0) + (op["tamanho"] or 0)
         for op in itens:
             print(f"{op['id']:>5} {op['lote_id']:>5}  {formatar_bytes(op['tamanho'] or 0):>10}  "
                   f"{ha_quanto_tempo(op['concluido_em']):<12}  {relativo(op['origem'], PASTA_TESTE)}")
@@ -130,6 +173,8 @@ def cmd_listar(args: argparse.Namespace) -> int:
                   f"(desde {lote['desde'][:10]})")
         total = sum(op["tamanho"] or 0 for op in itens)
         print(f"Espaço total ocupado pela quarentena: {formatar_bytes(total)} em {len(itens)} arquivo(s)")
+        for onde, bytes_ in sorted(por_unidade.items()):
+            print(f"  {onde}: {formatar_bytes(bytes_)}")
         return 0
     finally:
         indice.fechar()
@@ -169,6 +214,8 @@ def registrar(sub: argparse._SubParsersAction) -> None:
 
     def comum(p: argparse.ArgumentParser, com_sim: bool = True) -> None:
         p.add_argument("--so-previa", action="store_true", help="só mostra o que seria feito")
+        p.add_argument("--pc-real", action="store_true",
+                       help="liga o modo PC real (pede para digitar PC REAL): mexe fora da pasta_teste")
         if com_sim:
             p.add_argument("--sim", action="store_true", help="não pergunta (a prévia aparece mesmo assim)")
         p.add_argument("--indice", default=str(CAMINHO_INDICE), help=argparse.SUPPRESS)
@@ -199,3 +246,9 @@ def registrar(sub: argparse._SubParsersAction) -> None:
     e = qsub.add_parser("esvaziar", help="APAGA DE VEZ o que está na quarentena (confirmação dupla)")
     comum(e, com_sim=False)
     e.set_defaults(func=cmd_esvaziar)
+
+    mu = sub.add_parser("mover-unidade", help="move arquivos/pastas para OUTRA unidade (cópia conferida por hash)")
+    mu.add_argument("itens", nargs="+", help="arquivos e/ou pastas")
+    mu.add_argument("--para", required=True, help="pasta de destino, em outra unidade")
+    comum(mu)
+    mu.set_defaults(func=cmd_mover_unidade)

@@ -18,7 +18,7 @@ from .descricoes import ClienteIA
 from .ia import IAIndisponivel, avaliar_ia
 from .indice import Indice
 from .memoria import memoria_disponivel
-from .protecoes import Protecoes
+from .protecoes import Protecoes, protecoes_para
 from .quarentena import Plano, Quarentena
 from .raiox import prefixo_da_pasta
 
@@ -160,7 +160,7 @@ def sugerir_pastas(
     """
     r = ResultadoSugestao()
     base = Path(pasta).resolve()
-    protecoes = protecoes or Protecoes()
+    protecoes = protecoes or protecoes_para(base)
     linhas = []
     for l in indice.todos(prefixo_da_pasta(base)):
         if protecoes.motivo_para_nao_organizar(Path(l["caminho"]), base):
@@ -220,7 +220,7 @@ def pastas_esvaziadas(origens: list[Path], base: str | Path, protecoes: Protecoe
     Ordem: da mais funda para a mais rasa (é a ordem certa para remover).
     """
     base = Path(base).resolve()
-    protecoes = protecoes or Protecoes()
+    protecoes = protecoes or protecoes_para(base)
     candidatas: set[Path] = set()
     for origem in origens:
         pasta = Path(origem).parent
@@ -250,7 +250,7 @@ def planejar_organizacao(
     jogos), que são tratadas como uma unidade.
     """
     base = Path(pasta).resolve()
-    protecoes = protecoes or Protecoes()
+    protecoes = protecoes or protecoes_para(base)
     movimentos = []
     ignorados: list[tuple[Path, str]] = []
     for linha in indice.todos(prefixo_da_pasta(base)):

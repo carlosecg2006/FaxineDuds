@@ -33,6 +33,7 @@ def rotulo_flexivel(texto: str = "") -> QLabel:
 VERBO = {
     "quarentena": "mandar para a quarentena", "restaurar": "trazer de volta", "esvaziar": "APAGAR DE VEZ",
     "organizar": "mover para as pastas sugeridas", "remover_pasta": "remover estas pastas vazias",
+    "mover_unidade": "copiar para a outra unidade, conferir o hash e mandar os originais para a quarentena",
 }
 
 
@@ -48,6 +49,12 @@ class DialogoPrevia(QDialog):
                         f"vou {VERBO.get(plano.tipo, plano.tipo)}. Nada foi feito ainda.")
         resumo.setWordWrap(True)
         layout.addWidget(resumo)
+        if plano.avisos:  # Fase 7B: espaço, quarentena, programas que perdem o caminho...
+            avisos = QLabel("<br>".join(f"⚠ {a}" for a in plano.avisos))
+            avisos.setWordWrap(True)
+            avisos.setTextFormat(Qt.TextFormat.RichText)
+            avisos.setStyleSheet("background:#fff3cd;color:#5c4400;border:1px solid #e0c060;padding:6px;")
+            layout.addWidget(avisos)
 
         arvore = QTreeWidget()
         arvore.setHeaderLabels(["Item", "Destino / motivo", "Tamanho"])
@@ -57,6 +64,10 @@ class DialogoPrevia(QDialog):
         pulados = [p for p in plano.passos if p.problema]
         for p in plano.validos:
             destino = relativo(p.destino, base) if p.destino else ""
+            if p.remover_pasta:
+                destino = "remover a pasta (se ficar vazia; o desfazer recria)"
+            if p.quarentenar_copia:
+                destino = "a cópia vai para a quarentena da unidade dela"
             if p.renomeado:
                 destino += "  (nome trocado: já existe um igual)"
             if p.manter:

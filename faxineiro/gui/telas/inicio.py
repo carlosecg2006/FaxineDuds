@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...config import Bloqueios, bloqueios_do_pc, dentro_da_pasta_teste
 from ...formato import formatar_bytes, numero, relativo
 from ...raiox import totais_por_categoria
 from ...scanner import escanear
@@ -65,6 +66,10 @@ class TelaInicio(QWidget):
     def ao_mostrar(self) -> None:
         self.atualizar()
 
+    def pasta_mudou(self) -> None:
+        self.atual = self.amb.pasta
+        self.atualizar()
+
     def atualizar(self) -> None:
         indice = self.amb.leitura
         total = indice.contar()
@@ -92,10 +97,12 @@ class TelaInicio(QWidget):
 
     def sincronizar(self) -> None:
         pasta = self.amb.pasta
+        # No PC real, a pasta do próprio app fica fora (como no `escanear --pc`).
+        bloqueios = Bloqueios() if dentro_da_pasta_teste(pasta, self.amb.limite) else bloqueios_do_pc()
 
         def trabalho(ctx):
             with self.amb.abrir_indice() as indice:
-                return escanear(pasta, indice, parar=ctx.parar,
+                return escanear(pasta, indice, bloqueios=bloqueios, parar=ctx.parar,
                                 ao_progredir=lambda p: ctx.avisar(p.varridos, 0,
                                                                   f"Sincronizando: {numero(p.varridos)} arquivos"))
 
