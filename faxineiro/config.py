@@ -58,6 +58,29 @@ NOMES_BLOQUEADOS_NA_RAIZ: tuple[str, ...] = (
     "$WINDOWS.~TMP", "$WinREAgent", "Windows.old", "$Windows.~BT", "$Windows.~WS",
 )
 
+# Fase 7C.3 — regra 3 ajustada: as ÚNICAS pastas dentro do AppData onde o Faxineiro pode mexer
+# (sempre pela quarentena, com o modo PC real). Relativas à pasta do usuário; '*' vale um nível
+# (perfis do navegador: Default, Profile 1...). Estudado no BleachBit (cleaners/*.xml), sem código dele.
+CACHES_LIBERADOS: dict[str, tuple[str, ...]] = {
+    "temp": (r"AppData\Local\Temp",),
+    "chrome": (r"AppData\Local\Google\Chrome\User Data\*\Cache",
+               r"AppData\Local\Google\Chrome\User Data\*\Code Cache",
+               r"AppData\Local\Google\Chrome\User Data\*\GPUCache",
+               r"AppData\Local\Google\Chrome\User Data\ShaderCache",
+               r"AppData\Local\Google\Chrome\User Data\GrShaderCache",
+               r"AppData\Local\Google\Chrome\User Data\GraphiteDawnCache"),
+    "edge": (r"AppData\Local\Microsoft\Edge\User Data\*\Cache",
+             r"AppData\Local\Microsoft\Edge\User Data\*\Code Cache",
+             r"AppData\Local\Microsoft\Edge\User Data\*\GPUCache",
+             r"AppData\Local\Microsoft\Edge\User Data\ShaderCache",
+             r"AppData\Local\Microsoft\Edge\User Data\GrShaderCache",
+             r"AppData\Local\Microsoft\Edge\User Data\GraphiteDawnCache"),
+    "firefox": (r"AppData\Local\Mozilla\Firefox\Profiles\*\cache2",),
+    "npm": (r"AppData\Local\npm-cache",),
+    "pip": (r"AppData\Local\pip\cache",),
+    "crashdumps": (r"AppData\Local\CrashDumps",),
+}
+
 # Fase 7A — regra 5 dividida: LER o PC real é permitido nestas áreas.
 # Fase 7B — MUDAR o disco nelas só com o "modo PC real" ligado (areas_de_acao); desligado, só a pasta_teste.
 AREAS_DE_LEITURA: tuple[Path, ...] = (Path(r"C:\Users\Carlos Eduardo"), Path("D:\\"))

@@ -150,6 +150,22 @@ def protecoes_para(area: Path) -> Protecoes:
     return Protecoes(bloqueios=config.bloqueios_do_pc() if no_pc else Bloqueios())
 
 
+def cache_liberado(caminho: str | Path) -> str | None:
+    """Fase 7C.3: se `caminho` está DENTRO de uma pasta de `config.CACHES_LIBERADOS` (nunca a
+    própria pasta), devolve qual ("temp", "chrome"...). É a única exceção ao bloqueio do AppData."""
+    partes = tuple(p.casefold() for p in Path(caminho).parts)
+    perfil = tuple(p.casefold() for p in Path(config.PASTA_DO_USUARIO).parts)
+    if partes[:len(perfil)] != perfil:
+        return None
+    resto = partes[len(perfil):]
+    for chave, padroes in config.CACHES_LIBERADOS.items():
+        for padrao in padroes:
+            pedacos = [p.casefold() for p in padrao.split("\\")]
+            if len(resto) > len(pedacos) and all(fnmatch.fnmatchcase(a, b) for a, b in zip(resto, pedacos)):
+                return chave
+    return None
+
+
 def fora_da_area(caminho: Path, areas: tuple[Path, ...]) -> str:
     if config.area_de(caminho, config.AREAS_DE_LEITURA) is not None:
         return "fora da área permitida: ligue o modo PC real para mexer aqui (menu Segurança)"

@@ -75,7 +75,22 @@ def cmd_programas(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_limpezas(args: argparse.Namespace) -> int:
+    from . import limpezas
+
+    achados = limpezas.medir()
+    for a in achados:
+        print(f"{formatar_bytes(a.bytes):>10} {numero(len(a.arquivos)):>8} arquivos  {a.limpeza.titulo}"
+              + (f"  — {a.motivo}" if a.motivo else ""))
+    print(f"\nAté {formatar_bytes(sum(a.bytes for a in achados if a.motivo is None))} podem ir para a quarentena. "
+          "Para limpar, use a tela Limpezas do app (com o modo PC real). Nada foi movido.")
+    return 0
+
+
 def registrar(sub) -> None:
+    li = sub.add_parser("limpezas", help="quanto cada limpeza segura liberaria: temporários e caches (só lê)")
+    li.set_defaults(func=cmd_limpezas)
+
     pr = sub.add_parser("programas", help="programas e jogos instalados: tamanho e último sinal de uso (só lê)")
     pr.add_argument("--ordem", choices=("tamanho", "uso"), default="tamanho")
     pr.set_defaults(func=cmd_programas)

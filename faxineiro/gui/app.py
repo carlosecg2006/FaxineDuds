@@ -65,8 +65,9 @@ class Ambiente:
         """Para usar DENTRO de uma tarefa: cada thread com a sua conexão."""
         return Indice(self.caminho_indice)
 
-    def quarentena(self, indice: Indice) -> Quarentena:
-        return Quarentena(indice, limite=self.areas, local=self.local_quarentena, unidade=self.unidade)
+    def quarentena(self, indice: Indice, caches: bool = False) -> Quarentena:
+        """`caches=True` só na tela Limpezas (libera os caches da lista fixa no AppData)."""
+        return Quarentena(indice, limite=self.areas, local=self.local_quarentena, unidade=self.unidade, caches=caches)
 
     def rodar(self, titulo: str, funcao, ao_terminar=None) -> bool:
         def falhou(msg: str) -> None:

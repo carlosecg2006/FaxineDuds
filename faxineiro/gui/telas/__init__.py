@@ -3,6 +3,7 @@ from .faxina import TelaFaxina
 from .ia import TelaIA
 from .inicio import TelaInicio
 from .organizar import TelaOrganizar
+from .limpezas import TelaLimpezas
 from .programas import TelaProgramas
 from .quarentena import TelaQuarentena
 from .sistema import TelaSistema
@@ -15,5 +16,6 @@ TELAS = [
     ("Quarentena", TelaQuarentena),
     ("Sistema", TelaSistema),
     ("Programas", TelaProgramas),
+    ("Limpezas", TelaLimpezas),
     ("IA", TelaIA),
 ]

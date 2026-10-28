@@ -21,7 +21,7 @@ from . import disco, raiox
 from .config import NOME_QUARENTENA, PASTA_TESTE, area_de, pasta_quarentena
 from .hashes import Hasher
 from .indice import Indice
-from .protecoes import Protecoes, fora_da_area, protecoes_para
+from .protecoes import Protecoes, cache_liberado, fora_da_area, protecoes_para
 from .scanner import indexar_arquivo
 
 # Ganchos usados pelos testes para simular travamento em pontos críticos.
@@ -107,12 +107,15 @@ class Quarentena:
         gancho: Callable[[str, Passo], None] | None = None,
         protecoes: Protecoes | None = None,
         unidade: Callable[[Path], str] | None = None,
+        caches: bool = False,
     ) -> None:
         """`limite`: a área (ou as áreas) onde é permitido mudar o disco — trava da regra 5.
         No modo PC real são `config.areas_de_acao(True)`; desligado, só a pasta_teste.
         `local`: diz onde fica a quarentena de cada arquivo (padrão: config.pasta_quarentena).
         `protecoes`: força uma Protecoes (testes); o padrão escolhe pela área.
-        `unidade`: diz em que unidade está um caminho (padrão: a letra; os testes simulam duas)."""
+        `unidade`: diz em que unidade está um caminho (padrão: a letra; os testes simulam duas).
+        `caches`: SÓ as Limpezas (7C.3) ligam — libera os caches da lista fixa dentro do AppData.
+        Desligado (sempre, no resto do app), o AppData inteiro continua bloqueado."""
         self.indice = indice
         areas = (limite,) if isinstance(limite, (str, Path)) else tuple(limite)
         self.areas = tuple(Path(a).resolve() for a in areas)
@@ -124,6 +127,7 @@ class Quarentena:
         self._protecoes: dict[Path, Protecoes] = {}
         self.ao_copiar: Callable[[int], None] | None = None  # mover de unidade: bytes copiados do arquivo atual
         self.unidade = unidade or (lambda c: Path(c).resolve().drive.upper())
+        self.caches = caches
 
     # --- travas -------------------------------------------------------------
 
@@ -153,6 +157,8 @@ class Quarentena:
         area = self._area(caminho)
         if area is None:
             return self._fora_da_area(caminho)
+        if self.caches and cache_liberado(caminho):
+            return None  # 7C.3: só nas Limpezas — cache da lista fixa (Temp, navegadores, npm, pip, CrashDumps)
         return self.protecoes_da_area(area).motivo_para_nao_mexer(Path(caminho), area)
 
     def _em_pasta_bloqueada(self, caminho: Path) -> bool:

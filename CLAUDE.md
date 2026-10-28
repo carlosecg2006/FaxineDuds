@@ -30,8 +30,9 @@ um conceito por vez, sem enrolação.
      (`sistema.py`): tamanhos e nomes pela listagem, sem abrir arquivo,
      sem seguir junções, e nada entra no índice.
    - **Mexer** dentro do AppData só nos caminhos de uma lista fixa de caches
-     conhecidos (navegadores, npm, pip, CrashDumps, `%TEMP%`), sempre pela
-     quarentena (7C.3); e nas pastas que o Detetive (7C.5) confirmar como
+     conhecidos (navegadores, npm, pip, CrashDumps, `%TEMP%`;
+     `config.CACHES_LIBERADOS`), sempre pela quarentena e só pela tela
+     Limpezas (7C.3); e nas pastas que o Detetive (7C.5) confirmar como
      **sobra órfã** dentro do AppData e do ProgramData, com prévia,
      explicação e quarentena com desfazer (decisão do Carlos, 28/10/2026).
      Program Files e Windows continuam proibidos.
@@ -139,7 +140,7 @@ bloqueio não pegaria:
 | 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Concluída — 7A (ler o PC real) e 7B (ações no PC real com o modo PC real, esvaziar por unidade, Faxineiro.exe + atalho) |
-| 7C | Sistema consciente | Em andamento (7C.1 e 7C.2 concluídas) — ver abaixo |
+| 7C | Sistema consciente | Em andamento (7C.1, 7C.2 e 7C.3 concluídas) — ver abaixo |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -177,7 +178,7 @@ comandos falsos, e o primeiro uso real é o Carlos clicando.
   sem administrador (registro do Menu Iniciar + data mais recente na
   pasta). Botão "Desinstalar" chama o desinstalador oficial (UninstallString)
   depois de confirmar; apps da Loja abrem Configurações > Aplicativos.
-- **7C.3 Limpezas seguras:** estudar o BleachBit (GPL: clonar em
+- **7C.3 Limpezas seguras** — concluída. Estudar o BleachBit (GPL: clonar em
   `referencias/` só para ler, sem copiar código). Lista fixa: `%TEMP%`,
   caches do Chrome/Edge/Firefox (só com o navegador fechado; o app confere),
   npm, pip, CrashDumps. Explicação, prévia, quarentena (o espaço só é
@@ -499,4 +500,33 @@ comandos falsos, e o primeiro uso real é o Carlos clicando.
     não encontrada (E: desconectado: Westland Survival na Steam; sobras:
     Roblox, Zoom, ASIO4ALL, CopySpider).
   - 415 testes (372 comuns + 1 pulado, 42 de interface), 3 de 3 rodadas verdes.
-- Próxima: 7C.3 (Limpezas seguras; antes, estudar o BleachBit).
+- Fase 7C.3 — concluída (limpezas seguras). BleachBit clonado em
+  `referencias/bleachbit` (28/10/2026), só lido (`cleaners/*.xml`,
+  `Cleaner.py`), sem copiar código. `limpezas.py`:
+  - lista fixa `config.CACHES_LIBERADOS` (relativa à pasta do usuário, `*` =
+    um nível): `%TEMP%`; caches do Chrome e do Edge por perfil (`Cache`,
+    `Code Cache`, `GPUCache`) e gerais (`ShaderCache`, `GrShaderCache`,
+    `GraphiteDawnCache`); `cache2` do Firefox; `npm-cache`; `pip\cache`;
+    `CrashDumps`. Nunca senhas, cookies, histórico, `Preferences`;
+  - `protecoes.cache_liberado` + `Quarentena(caches=True)`: a ÚNICA exceção ao
+    bloqueio do AppData, e só a tela Limpezas liga (`Ambiente.quarentena(...,
+    caches=True)`); no resto do app o AppData continua bloqueado (teste
+    `test_fora_das_limpezas_o_cache_continua_bloqueado`). O modo PC real
+    continua obrigatório;
+  - navegador aberto (`tasklist`: chrome.exe, msedge.exe, firefox.exe) → a
+    limpeza dele fica de fora; confere de novo na hora da prévia;
+  - `%TEMP%`: cada subpasta de cima é um bloco — se qualquer arquivo dela foi
+    mexido nas últimas 24 h, ela fica inteira (a pasta da sessão do Claude
+    Code e a do pytest ficam lá); arquivos soltos, um por um;
+  - só arquivos vão para a quarentena; as pastas do cache ficam; arquivo em
+    uso vira "falhou" (normal);
+  - CLI: `python -m faxineiro limpezas` (só mede). Interface: tela
+    "Limpezas" (Medir, marcar, "Mandar as marcadas para a quarentena…" com a
+    prévia de sempre; pede o modo PC real).
+  - Real (28/10/2026, só medido; nada foi movido): `%TEMP%` 277 MB (159
+    arquivos; 11,6 mil recentes ficam), Chrome 504 MB (estava aberto → fora),
+    Edge 118 MB, npm 182 MB, pip 3 MB, CrashDumps 9 MB; Firefox não instalado.
+  - Bug achado pelos testes antes do uso real: a expansão do `*` usava o
+    caminho com `\\?\` e o Chrome/Edge sairiam "fora da área".
+  - 427 testes (380 comuns + 1 pulado, 46 de interface), 3 de 3 rodadas verdes.
+- Próxima: 7C.4 (botões da Limpeza do Windows).

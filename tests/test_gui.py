@@ -142,7 +142,7 @@ def test_todas_as_telas_abrem(janela, qtbot):
     for i in range(janela.lateral.count()):
         janela.lateral.setCurrentRow(i)
         qtbot.wait(10)
-    assert janela.lateral.count() == 8
+    assert janela.lateral.count() == 9
 
 
 def test_inicio_mostra_mapa_e_sincroniza(janela, amb, qtbot, area):
