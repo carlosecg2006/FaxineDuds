@@ -31,7 +31,12 @@ um conceito por vez, sem enrolação.
      sem seguir junções, e nada entra no índice.
    - **Mexer** dentro do AppData só nos caminhos de uma lista fixa de caches
      conhecidos (navegadores, npm, pip, CrashDumps, `%TEMP%`), sempre pela
-     quarentena (7C.3).
+     quarentena (7C.3); e nas pastas que o Detetive (7C.5) confirmar como
+     **sobra órfã** dentro do AppData e do ProgramData, com prévia,
+     explicação e quarentena com desfazer (decisão do Carlos, 28/10/2026).
+     Program Files e Windows continuam proibidos.
+   - **Ler** a pasta de cada programa instalado (tamanho e datas pela
+     listagem) também é permitido para a lista de programas (7C.2).
    - Dentro de Windows e Program Files o app **nunca** apaga nem move: só
      chama o próprio Windows (desinstalador oficial, Limpeza de Disco, DISM),
      com administrador só no comando, e só o Carlos clica no uso real.
@@ -134,7 +139,7 @@ bloqueio não pegaria:
 | 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Concluída — 7A (ler o PC real) e 7B (ações no PC real com o modo PC real, esvaziar por unidade, Faxineiro.exe + atalho) |
-| 7C | Sistema consciente | Em andamento (7C.1 concluída) — ver abaixo |
+| 7C | Sistema consciente | Em andamento (7C.1 e 7C.2 concluídas) — ver abaixo |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -167,7 +172,7 @@ Os desinstaladores, as limpezas e os ajustes do Windows **nunca** são
 executados pelo Claude neste PC, nem para demonstrar: os testes usam
 comandos falsos, e o primeiro uso real é o Carlos clicando.
 - **7C.1 Raio-X do sistema** (só leitura) — concluída.
-- **7C.2 Programas e jogos instalados:** registro do Windows (nome,
+- **7C.2 Programas e jogos instalados** — concluída. Registro do Windows (nome,
   tamanho, data de instalação), Steam e CurseForge. "Último sinal de uso"
   sem administrador (registro do Menu Iniciar + data mais recente na
   pasta). Botão "Desinstalar" chama o desinstalador oficial (UninstallString)
@@ -192,7 +197,9 @@ comandos falsos, e o primeiro uso real é o Carlos clicando.
   o que se perde: armazenamento reservado, hibernação, espaço dos pontos
   de restauração, limpeza de componentes antigos. Administrador só no
   comando, confirmação, e botão para desfazer cada ajuste. Só o Carlos
-  clica no uso real.
+  clica no uso real. Exceção aceita pelo Carlos (28/10/2026): a limpeza de
+  componentes antigos não tem desfazer; a tela tem que avisar isso com
+  clareza antes.
 
 ### Fase 8 — Arquivo Morto na nuvem
 - O usuário escolhe arquivos e clica em "Arquivar".
@@ -465,4 +472,31 @@ comandos falsos, e o primeiro uso real é o Carlos clicando.
     caiu no processo de interface (0xC0000005) enquanto a medição real lia o
     disco ao mesmo tempo; depois, 3 de 3 rodadas verdes. Se voltar a cair sem
     carga no disco, investigar.
-- Próxima: 7C.2 (Programas e jogos instalados).
+- Fase 7C.2 — concluída (programas e jogos). `programas.py`:
+  - lê (só lê) o registro "Aplicativos instalados" (máquina 64/32 bits +
+    usuário), sem componentes do sistema, atualizações (KB) e repetidos;
+    a Steam (todas as bibliotecas de `libraryfolders.vdf`, um jogo por
+    `appmanifest_*.acf`) e as instâncias do CurseForge (`minecraftinstance.json`);
+  - pasta do programa: `InstallLocation`, senão a do ícone ou a do
+    desinstalador — nunca `Package Cache`, `Installer`, `Common Files`
+    (instaladores guardados e peças compartilhadas) nem a do navegador
+    para apps web do Chrome/Edge (`--uninstall-app-id`);
+  - tamanho: o do registro/Steam, senão medido pela listagem da pasta;
+  - "último sinal de uso": "aberto" (histórico do Menu Iniciar, UserAssist
+    em ROT13, data no byte 60; Steam `LastPlayed`; CurseForge `lastPlayed`)
+    ou "pasta mudou" (arquivo mais novo da pasta e um nível abaixo);
+  - pasta que não existe (ex.: unidade E: desconectada) → "pasta não encontrada";
+  - `desinstalar` só ABRE o desinstalador oficial (ShellExecute "open": o
+    Windows pede administrador se precisar); Steam por `steam://uninstall/<id>`;
+    CurseForge sem desinstalador (explica que é pelo app dele); apps da Loja
+    → `ms-settings:appsfeatures`. Os testes usam um abridor falso.
+  - CLI: `python -m faxineiro programas [--ordem tamanho|uso]` (só lista).
+  - Interface: tela "Programas" (Atualizar lista, filtro, ordenar por
+    coluna, Desinstalar… com confirmação, Mostrar a pasta, Apps da Microsoft
+    Store…). Só lê quando o Carlos clica em Atualizar.
+  - Real (28/10/2026): 75 programas e jogos em ~1–12 s; maiores FL Studio 20
+    (5,2 GB, aberto 27/10), Office (4,1 GB), Ollama (3,1 GB); 8 com a pasta
+    não encontrada (E: desconectado: Westland Survival na Steam; sobras:
+    Roblox, Zoom, ASIO4ALL, CopySpider).
+  - 415 testes (372 comuns + 1 pulado, 42 de interface), 3 de 3 rodadas verdes.
+- Próxima: 7C.3 (Limpezas seguras; antes, estudar o BleachBit).

@@ -57,7 +57,29 @@ def cmd_sistema(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_programas(args: argparse.Namespace) -> int:
+    from . import programas
+
+    lista = programas.listar()
+    if args.ordem == "uso":  # os esquecidos primeiro: sem sinal de uso, depois o uso mais antigo
+        lista.sort(key=lambda p: p.sinal_de_uso[0] or "")
+    print(f"{'Tamanho':>10}  {'Último sinal de uso':<24} {'Origem':<10} Programa")
+    for p in lista:
+        uso, fonte = p.sinal_de_uso
+        tamanho = formatar_bytes(p.tamanho) if p.tamanho is not None else "?"
+        sinal = f"{fonte} {uso}" if uso else "sem sinal"
+        aviso = "  (pasta não encontrada: unidade desconectada ou sobra)" if not p.pasta_existe else ""
+        print(f"{tamanho:>10}  {sinal:<24} {p.origem:<10} {p.nome}{aviso}")
+    print(f"\n{len(lista)} programas. Para desinstalar, use a tela Programas do app "
+          "(ela chama o desinstalador oficial de cada um).")
+    return 0
+
+
 def registrar(sub) -> None:
+    pr = sub.add_parser("programas", help="programas e jogos instalados: tamanho e último sinal de uso (só lê)")
+    pr.add_argument("--ordem", choices=("tamanho", "uso"), default="tamanho")
+    pr.set_defaults(func=cmd_programas)
+
     p = sub.add_parser("sistema", help="Raio-X do sistema: o que ocupa Windows, Program Files e AppData (só lê)")
     p.add_argument("--unidade", default=config.UNIDADE_DO_SISTEMA, help="unidade a medir (padrão: a do Windows)")
     p.add_argument("--minimo-mb", type=float, default=sistema.MINIMO / config.MB,

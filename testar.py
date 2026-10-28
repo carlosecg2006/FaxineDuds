@@ -18,7 +18,8 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent
 PARTES = (
     ("testes comuns", ["tests", "--ignore-glob=tests/test_gui*.py"]),
-    ("testes de interface", ["tests/test_gui.py", "tests/test_gui_7b.py", "tests/test_gui_sistema.py"]),
+    ("testes de interface", ["tests/test_gui.py", "tests/test_gui_7b.py", "tests/test_gui_sistema.py",
+                               "tests/test_gui_programas.py"]),
 )
 
 
