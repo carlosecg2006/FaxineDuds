@@ -25,6 +25,16 @@ um conceito por vez, sem enrolação.
    tem `Windows`, `Program Files`, `Recovery`... próprios). Lista de
    bloqueio configurável (`config.NOMES_BLOQUEADOS*`). Uma pasta dentro de
    uma pasta bloqueada também é bloqueada (ex.: `AppData\Local\...`).
+   Ajustada na Fase 7C (decisão do Carlos, 28/10/2026):
+   - **Ler** essas pastas é permitido só para o Raio-X do sistema
+     (`sistema.py`): tamanhos e nomes pela listagem, sem abrir arquivo,
+     sem seguir junções, e nada entra no índice.
+   - **Mexer** dentro do AppData só nos caminhos de uma lista fixa de caches
+     conhecidos (navegadores, npm, pip, CrashDumps, `%TEMP%`), sempre pela
+     quarentena (7C.3).
+   - Dentro de Windows e Program Files o app **nunca** apaga nem move: só
+     chama o próprio Windows (desinstalador oficial, Limpeza de Disco, DISM),
+     com administrador só no comando, e só o Carlos clica no uso real.
 4. O índice não copia arquivos: guarda só os dados (SQLite) com caminho,
    tamanho, datas, hash, tipo e descrição da IA. Exceções: miniaturas
    pequenas de imagens (96 px, cache em `dados/miniaturas/`; desde a Fase 5,
@@ -85,7 +95,7 @@ bloqueio não pegaria:
 
 ## Ambiente
 - Windows 11, PowerShell como shell principal.
-- Projeto em `D:\FaxineDuds`, versionado com Git (local, sem remoto).
+- Projeto em `D:\FaxineDuds`, versionado com Git (remoto privado no GitHub; push só com o OK do Carlos).
 - **PC com 4 GB de RAM** (≈0,4–0,6 GB disponíveis com os programas abertos)
   e 4 núcleos. Tudo que usa IA precisa caber nisso.
 - Ollama só com `qwen2.5:0.5b` (os modelos ficam no C:, em `~\.ollama\models`).
@@ -124,6 +134,7 @@ bloqueio não pegaria:
 | 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
 | 7 | PC real e .exe | Concluída — 7A (ler o PC real) e 7B (ações no PC real com o modo PC real, esvaziar por unidade, Faxineiro.exe + atalho) |
+| 7C | Sistema consciente | Em andamento (7C.1 concluída) — ver abaixo |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -149,6 +160,39 @@ bloqueio não pegaria:
 - Não é um "instalador" de verdade (setup que instala em Arquivos de
   Programas): é uma pasta pronta com o .exe e o atalho. Um setup (ex.: Inno
   Setup) fica para quando o app for para outro PC.
+
+### Fase 7C — Sistema consciente
+Ordem: uma subfase de cada vez, cada uma com testes (`testar.py`) e commit.
+Os desinstaladores, as limpezas e os ajustes do Windows **nunca** são
+executados pelo Claude neste PC, nem para demonstrar: os testes usam
+comandos falsos, e o primeiro uso real é o Carlos clicando.
+- **7C.1 Raio-X do sistema** (só leitura) — concluída.
+- **7C.2 Programas e jogos instalados:** registro do Windows (nome,
+  tamanho, data de instalação), Steam e CurseForge. "Último sinal de uso"
+  sem administrador (registro do Menu Iniciar + data mais recente na
+  pasta). Botão "Desinstalar" chama o desinstalador oficial (UninstallString)
+  depois de confirmar; apps da Loja abrem Configurações > Aplicativos.
+- **7C.3 Limpezas seguras:** estudar o BleachBit (GPL: clonar em
+  `referencias/` só para ler, sem copiar código). Lista fixa: `%TEMP%`,
+  caches do Chrome/Edge/Firefox (só com o navegador fechado; o app confere),
+  npm, pip, CrashDumps. Explicação, prévia, quarentena (o espaço só é
+  liberado ao esvaziar), arquivo em uso é pulado.
+- **7C.4 Limpeza do Windows:** botões para `cleanmgr` e
+  `DISM /StartComponentCleanup`, pedindo administrador só no comando.
+  A limpeza de componentes não tem desfazer (avisar antes).
+- **7C.5 Detetive de pastas:** botão "O que é isto?" em qualquer pasta ou
+  arquivo: descobre o programa dono (lista de programas do Windows, nome e
+  empresa gravados nos .exe, atalhos do Menu Iniciar, apps da Loja,
+  bibliotecas da Steam e do CurseForge, data do último uso), inclusive
+  portáteis e jogos de launchers. Pastas sem dono (sobras de programas
+  desinstalados), inclusive no AppData, viram "sobra órfã" com explicação;
+  só essas podem ir para a quarentena, com desfazer. Se não descobrir,
+  pesquisa online só o nome da pasta, com permissão do Carlos a cada vez.
+- **7C.6 Ajustes do sistema:** cada ajuste com explicação, quanto libera e
+  o que se perde: armazenamento reservado, hibernação, espaço dos pontos
+  de restauração, limpeza de componentes antigos. Administrador só no
+  comando, confirmação, e botão para desfazer cada ajuste. Só o Carlos
+  clica no uso real.
 
 ### Fase 8 — Arquivo Morto na nuvem
 - O usuário escolhe arquivos e clica em "Arquivar".
@@ -387,4 +431,38 @@ bloqueio não pegaria:
       comando (lote 20: 12 arquivos, 6,7 MB, 11 pastas; 0 problemas),
       esperando o Carlos esvaziar.
     - 377 testes (345 comuns + 1 pulado, 31 de interface), pelo `testar.py`.
-- Próxima: Fase 6 (pesquisa online, opcional) ou Fase 8 (Arquivo Morto).
+  - Correção (28/10/2026): esvaziar "Só o C:" com o modo PC real desligado
+    dizia "Nada a apagar". Agora explica que os itens ficaram de fora e
+    manda ligar o modo PC real.
+- GitHub: remoto `origin` = `https://github.com/carlosecg2006/FaxineDuds.git`
+  (privado). Push só com o OK do Carlos.
+- Fase 7C.1 — concluída (Raio-X do sistema, SÓ LEITURA). `sistema.py`:
+  - mede as pastas de sistema da unidade (achadas pela listagem da raiz:
+    `NOMES_BLOQUEADOS_NA_RAIZ` + `$Recycle.Bin` + `System Volume Information`)
+    e o `AppData` do usuário;
+  - soma pela listagem (`os.scandir` com `\\?\`), sem abrir arquivo, pulando
+    atalhos e junções;
+  - registra até 2 níveis abaixo de cada raiz, mais as pastas conhecidas lá
+    do fundo (ex.: cache do Chrome), que vão para o ancestral mais perto;
+  - cada pasta ganha selo ("seguro limpar", "use o desinstalador", "não mexa"),
+    explicação e "como": tabela `CONHECIDAS`; sem explicação própria, a regra
+    vem do pai (`POR_PAI`) ou é herdada;
+  - esconde as desconhecidas com menos de 50 MB e as subpastas das "opacas"
+    (WinSxS, Installer, assembly, Package Cache...), que têm nomes-código;
+  - o resultado fica em `dados/sistema_<letra>.json` (fora do Git, nada no índice).
+  - CLI: `python -m faxineiro sistema [--unidade C:] [--minimo-mb 50]`.
+  - Interface: tela "Sistema" (escolhe a unidade, "Medir agora" com progresso
+    e Cancelar, árvore com selos coloridos; clique duplo abre a pasta no
+    Explorador).
+  - Real (28/10/2026): C: em ~4 min 45 s, 106 mil pastas; 82,4 GB medidos,
+    de 87,6 GB usados (o Windows conta a mais por causa dos links do WinSxS).
+    Maiores: Windows 25,9 GB (WinSxS 11,4), AppData 25,2 GB (Local\Programs
+    5,1; Roaming\.minecraft 4,8), Program Files (x86) 21,4 GB (FL Studio 20
+    + Image-Line 9,1). O `pagefile.sys` (4,9 GB) fica no D:; o C: não tem
+    `hiberfil.sys` (hibernação desligada).
+  - 394 testes (357 comuns + 1 pulado, 36 de interface; `tests/test_sistema.py`
+    e `tests/test_gui_sistema.py`, este incluído no `testar.py`). Uma rodada
+    caiu no processo de interface (0xC0000005) enquanto a medição real lia o
+    disco ao mesmo tempo; depois, 3 de 3 rodadas verdes. Se voltar a cair sem
+    carga no disco, investigar.
+- Próxima: 7C.2 (Programas e jogos instalados).

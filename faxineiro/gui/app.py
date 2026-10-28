@@ -1,4 +1,4 @@
-"""Janela principal: barra lateral com as 6 telas, barra de progresso com Cancelar e tema claro/escuro."""
+"""Janela principal: barra lateral com as telas, barra de progresso com Cancelar e tema claro/escuro."""
 
 from __future__ import annotations
 

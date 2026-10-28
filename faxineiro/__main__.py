@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import cli_conversor, cli_ia, cli_quarentena, raiox
+from . import cli_conversor, cli_ia, cli_quarentena, cli_sistema, raiox
 from .config import (
     AREAS_DE_LEITURA,
     CAMINHO_INDICE,
@@ -326,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     cli_quarentena.registrar(sub)
     cli_ia.registrar(sub)
     cli_conversor.registrar(sub)
+    cli_sistema.registrar(sub)
 
     g = sub.add_parser("gui", help="abre a janela do Faxineiro")
     g.set_defaults(func=cmd_gui)
