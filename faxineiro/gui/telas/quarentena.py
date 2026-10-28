@@ -120,7 +120,13 @@ class TelaQuarentena(QWidget):
         unidade = self.unidade_esvaziar.currentData()  # None = todas
         plano = q.planejar_esvaziar(unidade)
         if not plano.validos:
-            self.amb.mensagem("Nada a apagar" + (f" no {unidade}." if unidade else "."))
+            motivos = sorted({p.problema for p in plano.passos if p.problema})
+            onde = f"a quarentena do {unidade}" if unidade else "a quarentena"
+            if motivos:  # tem itens, mas nenhum pode ser apagado agora: dizer POR QUÊ
+                QMessageBox.information(self, "Esvaziar", f"Não dá para esvaziar {onde} agora: "
+                                        f"{len(plano.passos)} item(ns) ficaram de fora.\n\n" + "\n".join(motivos))
+            else:
+                self.amb.mensagem(f"Nada a apagar n{onde[1:]}.")
             return False
         titulo = f"ESVAZIAR a quarentena do {unidade} (apaga de vez)" if unidade else "ESVAZIAR TODAS (apaga de vez)"
         if not confirmar_previa(plano, self.amb.pasta, titulo, self):

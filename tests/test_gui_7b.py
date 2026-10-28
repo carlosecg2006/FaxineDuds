@@ -178,3 +178,18 @@ def test_explorador_manda_pasta_inteira_para_quarentena(janela, amb, pc, qtbot, 
     _esperar(qtbot, amb)
     assert not (c / "Samples").exists()
     assert len(amb.leitura.itens_na_quarentena()) == 1
+
+
+def test_esvaziar_sem_modo_pc_real_explica_o_motivo(janela, amb, pc, caixas):
+    """Bug: com o modo desligado, "Só o C:" dizia "Nada a apagar" mesmo com arquivos lá."""
+    teste, c, d = pc
+    janela.ligar_pc_real(True, perguntar_texto=lambda: ("PC REAL", True))
+    q = amb.quarentena(amb.leitura)
+    q.executar(q.planejar_mover([c / "Samples" / "kick.wav"]))
+    janela.ligar_pc_real(False)
+    tela = janela.telas[4]
+    tela.atualizar()
+    tela.unidade_esvaziar.setCurrentIndex(tela.unidade_esvaziar.findData("C:"))
+    assert not tela.esvaziar()
+    assert caixas and "ligue o modo PC real" in caixas[-1] and "1 item(ns)" in caixas[-1]
+    assert len(amb.leitura.itens_na_quarentena()) == 1  # nada apagado

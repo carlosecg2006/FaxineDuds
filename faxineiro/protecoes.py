@@ -152,7 +152,7 @@ def protecoes_para(area: Path) -> Protecoes:
 
 def fora_da_area(caminho: Path, areas: tuple[Path, ...]) -> str:
     if config.area_de(caminho, config.AREAS_DE_LEITURA) is not None:
-        return "fora da área permitida: ligue o modo PC real para mexer aqui"
+        return "fora da área permitida: ligue o modo PC real para mexer aqui (menu Segurança)"
     return f"fora da área permitida ({', '.join(str(a) for a in areas)})"
 
 
