@@ -13,7 +13,9 @@ um conceito por vez, sem enrolação.
 
 ## Regras invioláveis
 1. Nunca apagar arquivo do usuário. "Excluir" = mover para a quarentena
-   (pasta _quarentena na mesma unidade) e registrar no histórico, com
+   (pasta _quarentena na mesma unidade: `D:\_quarentena`, e no C:
+   `C:\Users\Carlos Eduardo\_quarentena`, porque a raiz do C:\ pede administrador;
+   a pasta_teste tem a sua) e registrar no histórico, com
    desfazer. Única exceção: "Esvaziar a quarentena", que apaga de vez,
    só com confirmação dupla e mostrando o espaço liberado (decisão do
    Carlos, Fase 3).
@@ -34,8 +36,13 @@ um conceito por vez, sem enrolação.
      áreas do PC real em `config.AREAS_DE_LEITURA` (`C:\Users\Carlos Eduardo`
      e o `D:\` inteiro, sem a pasta do próprio app). `config.pode_ler`.
    - **Mudar o disco** (quarentena, organizar, remover pastas, converter,
-     esvaziar): SÓ na `pasta_teste` (`config.dentro_da_pasta_teste`), até o
-     Carlos decidir liberar.
+     mover para outra unidade, esvaziar): na `pasta_teste`; nas áreas do PC real
+     SÓ com o **modo PC real** ligado (Fase 7B, `config.areas_de_acao(True)`):
+     na interface pelo menu Segurança, na linha de comando com `--pc-real`, e
+     nos dois casos digitando `PC REAL`. Começa sempre desligado e não fica
+     salvo. Mesmo ligado, pastas bloqueadas, pastas-bloco, de programa, da nuvem
+     e backups do Windows ficam proibidos para sempre
+     (`protecoes.motivo_para_acao`).
 6. Internet só quando o usuário ativar, e só para duas coisas:
    - pesquisa de arquivos desconhecidos (Fase 6): envia só nome/tipo,
      nunca o conteúdo;
@@ -61,9 +68,14 @@ bloqueio não pegaria:
   `python -c "os.remove(...)"`, `shutil.rmtree`, `git clean`,
   `git reset --hard` ou scripts feitos só para apagar.
 - Código do app que move ou apaga arquivos só pode rodar com a pasta-alvo
-  dentro de `D:\FaxineDuds\pasta_teste`. Os testes (pytest) devem usar
-  pastas temporárias (`tmp_path`) ou `pasta_teste`, nunca outras pastas
-  do PC.
+  dentro de `D:\FaxineDuds\pasta_teste`. Exceções autorizadas pelo Carlos na
+  Fase 7B, e só elas: `C:\Users\Carlos Eduardo\FaxineiroTeste`,
+  `D:\FaxineiroTeste`, `D:\VSCodeUserSetup-x64-1.127.0.exe` e os `.DS_Store`
+  de `D:\Packs`. Qualquer outro arquivo do PC real, só com pedido explícito.
+  Os testes (pytest) devem usar pastas temporárias (`tmp_path`) ou
+  `pasta_teste`, nunca outras pastas do PC.
+- Rodar os testes com `.venv\Scripts\python testar.py`, e não com `pytest`
+  sozinho (ver Fase 7B em "Estado atual").
 - Nunca dar `git push` nem mexer em configurações do Git sem pedir.
 - Se um comando for bloqueado, parar e avisar o Carlos. Não procurar
   outro jeito de fazer a mesma coisa.
@@ -78,8 +90,13 @@ bloqueio não pegaria:
   e 4 núcleos. Tudo que usa IA precisa caber nisso.
 - Ollama só com `qwen2.5:0.5b` (os modelos ficam no C:, em `~\.ollama\models`).
   O 3b e o 1.5b não cabem na RAM e foram apagados em 26/10/2026 (liberou ~2,7 GB).
-- Discos: C: 118 GB (estava com 2 GB livres; 4,7 GB depois de apagar os modelos);
-  D: 530 GB (418 GB livres).
+- Discos: C: 118 GB (estava com 2 GB livres; 4,7 GB depois de apagar os modelos;
+  31,6 GB livres em 27/10/2026); D: 530 GB (404 GB livres em 27/10/2026).
+- Histórico de Arquivos do Windows: desligado para o usuário atual (conferido em
+  27/10/2026). O backup antigo em `D:\FileHistory` (usuário "carlo", 2023) incluía
+  todas as pastas da raiz do perfil. Se religar, excluir
+  `C:\Users\Carlos Eduardo\_quarentena` (Painel de Controle → Histórico de Arquivos
+  → Excluir pastas).
 
 ## Tecnologia
 - Python 3.11+ (no PC: 3.14), interface `PySide6-Essentials` (só QtCore/QtGui/QtWidgets, mais leve)
@@ -105,7 +122,7 @@ bloqueio não pegaria:
 | 5 | Interface | Concluída — app gráfico em PySide6 |
 | 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
-| 7 | PC real e .exe | 7A concluída (ler o PC real, só leitura). 7B: mudar o disco fora da `pasta_teste` e gerar instalador (ver pendências abaixo) |
+| 7 | PC real e .exe | 7A concluída (ler o PC real). 7B concluída (ações no PC real com o modo PC real). Falta: gerar o instalador (.exe) |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -122,17 +139,13 @@ bloqueio não pegaria:
 - Barra de progresso nas conversões longas.
 - O arquivo convertido entra no índice automaticamente.
 
-### Fase 7 — pendências já conhecidas
-- **Caminhos com mais de 260 caracteres.** Neste PC o Windows está com
-  `LongPathsEnabled = 0` (registro `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`).
-  Testado em 26/10/2026: o scanner não trava, mas **não indexa** pastas com
-  mais de ~248 caracteres e só avisa "Caminho longo demais..."
-  (`scanner.caminho_longo_demais`). Na quarentena, a falha vira "falhou" e
-  nada muda. Resolver na Fase 7: usar o prefixo `\\?\` nos caminhos absolutos
-  (scanner, hashes, quarentena) ou orientar a ativar `LongPathsEnabled`;
-  o teste `test_caminho_maior_que_260_nao_trava` já cria esse cenário.
-- Trocar a quarentena do modo dev (`pasta_teste\_quarentena`) para
-  `<unidade>:\_quarentena` (`config.pasta_quarentena(modo_dev=False)`).
+### Fase 7 — pendências
+- Resolvidas na 7B: caminhos com mais de 260 caracteres (prefixo `\\?\`,
+  `disco.py`; o Windows continua com `LongPathsEnabled = 0`) e a quarentena
+  por unidade.
+- Falta: gerar o instalador (.exe).
+- Ideia do Carlos: "esvaziar só uma unidade". Hoje o Esvaziar apaga o que
+  está em todas as quarentenas das áreas ligadas.
 
 ### Fase 8 — Arquivo Morto na nuvem
 - O usuário escolhe arquivos e clica em "Arquivar".
@@ -285,4 +298,60 @@ bloqueio não pegaria:
   própria pasta pedida seja uma delas; o `espaco` mostra o total de cada uma (do índice,
   `indice.pastas_de_programa`; aninhada conta só na de fora). Real: C: 1,5 GB (curseforge,
   .vscode, .ollama, .claude, .gemini); D: 4,2 GB (.minecraft 4,1 GB). 339 testes.
-- Próxima: Fase 6 — Pesquisa online (opcional) ou 7B.
+- Fase 7B — concluída (ações no PC real, sem o instalador .exe).
+  - **Modo PC real:** `Ambiente.pc_real`, menu Segurança, faixa vermelha e
+    `--pc-real` na linha de comando. Quarentena, organizar, converter e mover
+    usam `config.areas_de_acao` + `protecoes.motivo_para_acao`.
+  - **Seletor de pasta na janela:** `pasta_teste`, `C:\Users\Carlos Eduardo`,
+    `D:\` ou outra pasta de dentro.
+  - **Quarentena por unidade:** `config.pasta_quarentena`. A tela Quarentena
+    mostra o espaço de cada uma.
+  - **Caminhos longos:** `disco.py` (prefixo `\\?\`) no scanner, nos hashes,
+    nos tipos e na quarentena. O conversor recusa caminhos com mais de 200
+    caracteres com aviso (`LIMITE_CAMINHO`), porque o ffmpeg pode não aceitar
+    o prefixo.
+  - **Mover para outra unidade** (`transferir.py`):
+    1. checa o espaço livre, deixando 512 MB de folga;
+    2. grava no diário (`mover_unidade`, esquema v5 com `temporario` e `quarentena`);
+    3. renomeia o original para a quarentena da unidade dele (em uso → falha
+       aqui, sem mudar nada);
+    4. copia para `.faxineiro-copiando-*` calculando o BLAKE3, relê e confere;
+    5. dá o nome final e registra o original como item `quarentena` ligado
+       (`ref_operacao`).
+    - Erro, Cancelar ou Ctrl+C: o temporário some e o original volta.
+    - `recuperar_mover`: depois de um travamento, decide pelo que está no disco.
+    - Desfazer: o original volta e a cópia vai para a quarentena da unidade
+      de destino.
+    - Esvaziar o original torna a mudança "definitivo" (não dá mais para desfazer).
+    - Pasta inteira: vai inteira ou não vai. Pasta-bloco, link ou arquivo
+      "só na nuvem" dentro → recusa.
+    - Avisos fixos: o espaço só é liberado ao esvaziar, e programas (FL Studio)
+      perdem o caminho.
+    - Interface: Explorador (botão direito em arquivo e em pasta) e aba Pesados
+      (`gui/mover.py`). Linha de comando: `python -m faxineiro mover-unidade
+      ITENS --para PASTA --pc-real`.
+  - **Testes:**
+    - 371 no total (o de unidades de verdade só roda com
+      `FAXINEIRO_TESTE_DUAS_UNIDADES=1`).
+    - **Rodar com `testar.py`:** testes comuns e de interface em processos
+      separados. Com tudo num processo só, o Qt às vezes abortava o Python
+      ("Fatal Python error: Aborted", ~1 a cada 10–20 rodadas). Era sempre no
+      1º teste com QThread depois dos testes comuns e nunca com os de interface
+      sozinhos (0 em 40). Causa provável: o Qt (PySide6 + Python 3.14)
+      destruindo QThread/objetos num momento ruim do coletor de lixo, num
+      processo com muito estado. A mensagem do Qt não aparece, então a
+      investigação parou aí. 10 de 10 rodadas verdes com `testar.py`.
+    - Dois bugs reais achados no caminho e corrigidos: a busca do Explorador
+      (temporizador de 350 ms) disparava depois de fechar o índice — as telas
+      agora têm `encerrar()`; e `GerenteTarefas._fim` agora espera a thread
+      acabar (`wait()`, conexão enfileirada).
+  - **Demonstração real (27–28/10/2026):** ferramentas/gerar_teste_unidades.py.
+    - C:→D: <1 s; desfazer 0,9 s; D:→C: 1,0 s; pasta inteira 2,8 s; todos os
+      hashes conferidos.
+    - Passo 6: `D:\VSCodeUserSetup-x64-1.127.0.exe` + 22 `.DS_Store` →
+      quarentena (lote 16, 15,8 s), desfazer (lote 17, 23 de 23 hashes iguais),
+      de novo (lote 18): 194,3 MB em `D:\_quarentena`, esperando o Carlos
+      esvaziar.
+    - Em 28/10 às 09:33 o Carlos esvaziou pelo app os lotes de teste 12–14.
+- Próxima: Fase 6 (pesquisa online, opcional), o instalador .exe da Fase 7
+  ou a Fase 8.

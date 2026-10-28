@@ -286,6 +286,11 @@ class Janela(QMainWindow):
         if self.amb.gerente.ocupado:
             self.amb.gerente.cancelar()
             self.amb.gerente.esperar(5000)
+        # Temporizadores parados ANTES de fechar o índice: senão a busca do Explorador (350 ms
+        # depois da última tecla) dispara com a conexão já fechada — ou com a janela já destruída.
+        for tela in self.telas:
+            if hasattr(tela, "encerrar"):
+                tela.encerrar()
         self.amb.leitura.fechar()
         super().closeEvent(evento)
 

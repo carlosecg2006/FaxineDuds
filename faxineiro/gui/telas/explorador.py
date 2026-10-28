@@ -107,6 +107,9 @@ class TelaExplorador(QWidget):
     def ao_mostrar(self) -> None:
         self.recarregar_arvore()
 
+    def encerrar(self) -> None:
+        self._espera.stop()
+
     def pasta_mudou(self) -> None:
         self.busca.blockSignals(True)
         self.busca.clear()

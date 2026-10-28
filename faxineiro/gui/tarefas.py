@@ -13,7 +13,7 @@ import traceback
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 
 
 class Contexto:
@@ -78,7 +78,8 @@ class GerenteTarefas(QObject):
             return None
         tarefa = Tarefa(titulo, funcao, self)
         tarefa.progresso.connect(self.progresso)
-        tarefa.finished.connect(lambda: self._fim(tarefa, ao_terminar, ao_falhar))
+        # Enfileirada: o `finished` sai da thread de trabalho, mas o _fim tem que rodar na da janela.
+        tarefa.finished.connect(lambda: self._fim(tarefa, ao_terminar, ao_falhar), Qt.ConnectionType.QueuedConnection)
         self.atual = tarefa
         self.comecou.emit(titulo)
         tarefa.start(QThread.Priority.LowPriority)  # prioridade baixa: o PC continua respondendo
@@ -93,6 +94,10 @@ class GerenteTarefas(QObject):
             self.atual.wait(ms)
 
     def _fim(self, tarefa: Tarefa, ao_terminar, ao_falhar) -> None:
+        # O `finished` é emitido um instante ANTES de a thread acabar de verdade. Sem esperar,
+        # destruir a tarefa (ou o gerente) nesse instante faz o Qt abortar o processo inteiro
+        # ("QThread: Destroyed while thread is still running") — era o crash intermitente da suíte.
+        tarefa.wait()
         self.atual = None
         self.acabou.emit()
         if tarefa.erro is not None:

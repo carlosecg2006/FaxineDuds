@@ -71,7 +71,8 @@ def amb(tmp_path, pc, qtbot):
 def janela(amb, qtbot):
     j = Janela(amb)
     qtbot.addWidget(j)
-    return j
+    yield j
+    j.close()  # antes do `amb` fechar o índice: para os temporizadores (busca do Explorador, RAM da IA)
 
 
 def _esperar(qtbot, amb):

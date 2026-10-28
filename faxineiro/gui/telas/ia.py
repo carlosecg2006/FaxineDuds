@@ -65,6 +65,9 @@ class TelaIA(QWidget):
     def ao_mostrar(self) -> None:
         self._mostrar_memoria()
 
+    def encerrar(self) -> None:
+        self._relogio.stop()
+
     def _mostrar_memoria(self) -> None:
         livre, total = memoria_disponivel(), memoria_total()
         if livre is not None:

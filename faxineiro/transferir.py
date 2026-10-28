@@ -206,7 +206,7 @@ def _conferir_espaco(q: Quarentena, plano: Plano, destino: Path, espaco_livre: C
     if not precisa:
         return
     livre = espaco_livre(destino)
-    texto = (f"Espaço no {q.unidade(destino)}: precisa de {formatar_bytes(precisa)}, livre "
+    texto = (f"Espaço no {q.unidade(destino)} — precisa de {formatar_bytes(precisa)}, livre "
              f"{formatar_bytes(livre)} (deixo {formatar_bytes(folga)} de folga).")
     if precisa + folga > livre:
         for p in plano.validos:

@@ -59,7 +59,8 @@ def amb(tmp_path, area, qtbot):
 def janela(amb, qtbot):
     j = Janela(amb)
     qtbot.addWidget(j)
-    return j
+    yield j
+    j.close()  # antes do `amb` fechar o índice: para os temporizadores (busca do Explorador, RAM da IA)
 
 
 def _esperar_tarefa(qtbot, amb):
@@ -401,3 +402,12 @@ def test_carregador_responde_pelo_sinal(tmp_path, area, qtbot):
     with qtbot.waitSignal(c.pronta, timeout=5000) as sinal:
         c.pedir(str(area / "Fotos" / "praia.png"))
     assert sinal.args[1].width() == 96
+
+
+def test_fechar_logo_depois_de_digitar_na_busca(janela, qtbot):
+    """A busca espera 350 ms; fechar a janela antes disso não pode deixar o temporizador
+    disparar com o índice fechado (era o travamento intermitente da suíte)."""
+    janela.telas[1].busca.setText("praia")
+    janela.close()
+    qtbot.wait(600)  # o pytest-qt falha o teste se algo estourar no laço de eventos
+    assert not janela.telas[1]._espera.isActive()
