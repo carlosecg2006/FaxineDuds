@@ -3,9 +3,26 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+
+def _raiz_do_projeto() -> Path:
+    """Onde ficam dados/, pasta_teste/ e externos/ (ffmpeg).
+
+    - FAXINEIRO_RAIZ, se definida;
+    - no .exe do PyInstaller (Fase 7B): o .exe fica em <raiz>\\dist\\Faxineiro\\Faxineiro.exe,
+      então a raiz é 3 níveis acima — o mesmo índice e o mesmo ffmpeg do modo desenvolvimento;
+    - rodando o código: a pasta acima do pacote `faxineiro`.
+    """
+    if os.environ.get("FAXINEIRO_RAIZ"):
+        return Path(os.environ["FAXINEIRO_RAIZ"]).resolve()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parents[2]
+    return Path(__file__).resolve().parent.parent
+
+
+RAIZ_PROJETO = _raiz_do_projeto()
 PASTA_TESTE = RAIZ_PROJETO / "pasta_teste"
 CAMINHO_INDICE = RAIZ_PROJETO / "dados" / "indice.sqlite"
 

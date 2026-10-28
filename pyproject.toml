@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-qt>=4.4"]
+dev = ["pytest>=8", "pytest-qt>=4.4", "pyinstaller>=6.11"]  # pyinstaller: gera o .exe (Fase 7B)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

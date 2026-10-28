@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -42,6 +43,10 @@ class TelaQuarentena(QWidget):
         self.botao_desfazer.clicked.connect(self.desfazer)
         baixo.addWidget(self.botao_desfazer)
         baixo.addStretch(1)
+        baixo.addWidget(QLabel("Esvaziar:"))
+        self.unidade_esvaziar = QComboBox()  # Todas, ou só a quarentena de uma unidade
+        self.unidade_esvaziar.setToolTip("Escolha de qual unidade apagar de vez (a prévia mostra só ela)")
+        baixo.addWidget(self.unidade_esvaziar)
         self.botao_esvaziar = QPushButton("Esvaziar a quarentena…")
         self.botao_esvaziar.clicked.connect(self.esvaziar)
         baixo.addWidget(self.botao_esvaziar)
@@ -72,6 +77,14 @@ class TelaQuarentena(QWidget):
             raiz = Quarentena._raiz_da_quarentena(Path(op["destino"])) or Path(op["destino"]).parent
             por_unidade[str(raiz)] = por_unidade.get(str(raiz), 0) + (op["tamanho"] or 0)
         detalhe = "".join(f"<br>• {onde}: {formatar_bytes(b)}" for onde, b in sorted(por_unidade.items()))
+        unidade_de = self.amb.quarentena(leitura).unidade
+        unidades = sorted({unidade_de(Path(op["destino"])) for op in itens})
+        escolhida = self.unidade_esvaziar.currentData()
+        self.unidade_esvaziar.clear()
+        self.unidade_esvaziar.addItem("Todas as unidades", None)
+        for u in unidades:
+            self.unidade_esvaziar.addItem(f"Só o {u}", u)
+        self.unidade_esvaziar.setCurrentIndex(max(0, self.unidade_esvaziar.findData(escolhida)))
         self.resumo.setText(f"<b>Espaço ocupado pela quarentena: {formatar_bytes(total)}</b> em {len(itens)} arquivo(s). "
                             "Nada aqui foi apagado: dá para desfazer. O espaço de cada unidade só é liberado "
                             f"quando você esvaziar.{detalhe}")
@@ -104,13 +117,15 @@ class TelaQuarentena(QWidget):
 
     def esvaziar(self, perguntar_texto=None) -> bool:
         q = self.amb.quarentena(self.amb.leitura)
-        plano = q.planejar_esvaziar()
+        unidade = self.unidade_esvaziar.currentData()  # None = todas
+        plano = q.planejar_esvaziar(unidade)
         if not plano.validos:
-            self.amb.mensagem("Nada a apagar.")
+            self.amb.mensagem("Nada a apagar" + (f" no {unidade}." if unidade else "."))
             return False
-        if not confirmar_previa(plano, self.amb.pasta, "ESVAZIAR (apaga de vez)", self):
+        titulo = f"ESVAZIAR a quarentena do {unidade} (apaga de vez)" if unidade else "ESVAZIAR TODAS (apaga de vez)"
+        if not confirmar_previa(plano, self.amb.pasta, titulo, self):
             return False
-        if not confirmar_esvaziar(plano.total_bytes, self, perguntar_texto):
+        if not confirmar_esvaziar(plano.total_bytes, self, perguntar_texto, unidade):
             self.amb.mensagem("Cancelado. Nada foi apagado.")
             return False
 

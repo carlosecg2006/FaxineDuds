@@ -237,28 +237,58 @@ class Quarentena:
     # --- planejar (prévia) ----------------------------------------------------
 
     def planejar_mover(self, caminhos: Iterable[str | Path], descricao: str = "excluir") -> Plano:
+        """Arquivos ou pastas inteiras. Uma pasta vai INTEIRA (ou não vai): todos os arquivos para a
+        quarentena e depois as subpastas e ela mesma são removidas — vazias, e o desfazer recria."""
         plano = Plano("quarentena", descricao)
         vistos: set[Path] = set()
+        pastas: list[Path] = []
         for c in caminhos:
             origem = Path(c).resolve()
             if origem in vistos:
                 continue
             vistos.add(origem)
-            passo = Passo(origem=origem, destino=None, tamanho=0)
-            linha = self.indice.buscar(str(origem))
-            if linha is not None:
-                passo.pasta_raiz = linha["pasta_raiz"]
-                passo.hash_esperado = linha["hash_completo"]
-            if not disco.eh_arquivo(origem):
-                passo.problema = "arquivo não encontrado"
-            elif motivo := self.motivo_proibido(origem):
-                passo.problema = motivo
-            elif not self._mesma_unidade(origem, self.local(origem)):
-                passo.problema = "a quarentena fica em outra unidade (não copio arquivos)"
-            else:
-                passo.tamanho = disco.tamanho(origem)
-            plano.passos.append(passo)
+            if not disco.eh_pasta(origem):
+                plano.passos.append(self._passo_para_quarentena(origem))
+                continue
+            arquivos, da_pasta, motivo = self._conteudo_da_pasta(origem)
+            if motivo:
+                plano.passos.append(Passo(origem=origem, destino=None, tamanho=0, problema=motivo))
+                continue
+            for arquivo in arquivos:
+                if arquivo not in vistos:
+                    vistos.add(arquivo)
+                    plano.passos.append(self._passo_para_quarentena(arquivo))
+            pastas += da_pasta
+        for pasta in sorted(set(pastas), key=lambda p: -len(p.parts)):  # a mais funda primeiro
+            plano.passos.append(Passo(origem=pasta, destino=None, tamanho=0, remover_pasta=True))
         return plano
+
+    def _conteudo_da_pasta(self, pasta: Path) -> tuple[list[Path], list[Path], str | None]:
+        """Arquivos e subpastas (com ela) de uma pasta inteira, ou o motivo para não mexer nela."""
+        from .transferir import _problema_da_pasta  # import aqui: transferir usa esta classe
+
+        motivo = self.motivo_proibido(pasta / "x")
+        if motivo:
+            return [], [], motivo
+        if not self._mesma_unidade(pasta, self.local(pasta)):
+            return [], [], "a quarentena fica em outra unidade (não copio arquivos)"
+        return _problema_da_pasta(self, pasta)
+
+    def _passo_para_quarentena(self, origem: Path) -> Passo:
+        passo = Passo(origem=origem, destino=None, tamanho=0)
+        linha = self.indice.buscar(str(origem))
+        if linha is not None:
+            passo.pasta_raiz = linha["pasta_raiz"]
+            passo.hash_esperado = linha["hash_completo"]
+        if not disco.eh_arquivo(origem):
+            passo.problema = "arquivo não encontrado"
+        elif motivo := self.motivo_proibido(origem):
+            passo.problema = motivo
+        elif not self._mesma_unidade(origem, self.local(origem)):
+            passo.problema = "a quarentena fica em outra unidade (não copio arquivos)"
+        else:
+            passo.tamanho = disco.tamanho(origem)
+        return passo
 
     def planejar_duplicados(self, pasta: str | Path) -> Plano:
         """Para cada grupo do Raio-X, manda para a quarentena todos menos o sugerido."""
@@ -429,12 +459,17 @@ class Quarentena:
             plano.passos.append(passo)
         return plano
 
-    def planejar_esvaziar(self) -> Plano:
+    def planejar_esvaziar(self, unidade: str | None = None) -> Plano:
         """Lista o que seria APAGADO DE VEZ: só itens do histórico que ainda estão na quarentena.
+        `unidade` ("C:", "D:"...): só a quarentena daquela unidade — o resto nem aparece na prévia.
         Quarentena de uma unidade fora das áreas (modo PC real desligado) fica de fora."""
-        plano = Plano("esvaziar", "esvaziar a quarentena (apaga de vez)")
+        if unidade is not None:
+            unidade = unidade.rstrip(":\\/").upper() + ":"
+        plano = Plano("esvaziar", f"esvaziar a quarentena{' do ' + unidade if unidade else ''} (apaga de vez)")
         for op in self.indice.itens_na_quarentena():
             caminho = Path(op["destino"])
+            if unidade is not None and self.unidade(caminho) != unidade:
+                continue
             passo = Passo(origem=caminho, destino=None, tamanho=op["tamanho"] or 0,
                           hash_esperado=op["hash_completo"], ref_operacao=op["id"])
             if not disco.eh_arquivo(caminho):
@@ -473,8 +508,11 @@ class Quarentena:
                     self._remover_pasta(passo, lote, _)
                 else:
                     executar_passo(self, passo, lote, parar)
+        elif plano.tipo == "quarentena":
+            def acao(passo, lote, hashes):  # pasta inteira: no fim, as pastas (já vazias) saem
+                (self._remover_pasta if passo.remover_pasta else self._mover)(passo, lote, hashes)
         else:
-            acao = {"quarentena": self._mover, "restaurar": self._restaurar, "esvaziar": self._apagar,
+            acao = {"restaurar": self._restaurar, "esvaziar": self._apagar,
                     "organizar": self._organizar, "remover_pasta": self._remover_pasta}[plano.tipo]
         hashes_mantidos: dict[Path, str] = {}
         raizes: set[Path] = set()  # quarentenas tocadas: no fim, tiram-se as pastas que ficaram vazias

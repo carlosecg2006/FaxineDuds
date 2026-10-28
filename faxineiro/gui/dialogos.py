@@ -99,11 +99,13 @@ def confirmar_previa(plano: Plano, base: Path, titulo: str, parent: QWidget | No
     return DialogoPrevia(plano, base, titulo, parent).exec() == QDialog.DialogCode.Accepted
 
 
-def confirmar_esvaziar(espaco: int, parent: QWidget | None = None, perguntar_texto=None) -> bool:
+def confirmar_esvaziar(espaco: int, parent: QWidget | None = None, perguntar_texto=None,
+                       unidade: str | None = None) -> bool:
     """Confirmação dupla (regra 1): sim/não e depois digitar ESVAZIAR."""
+    onde = f"a quarentena do {unidade}" if unidade else "TODAS as quarentenas"
     resp = QMessageBox.warning(
         parent, "Esvaziar a quarentena",
-        f"Isto vai liberar {formatar_bytes(espaco)} e APAGAR DE VEZ os arquivos da quarentena.\n"
+        f"Isto vai liberar {formatar_bytes(espaco)} e APAGAR DE VEZ os arquivos de {onde}.\n"
         "NÃO DÁ PARA DESFAZER.\n\nTem certeza?",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
     )

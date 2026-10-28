@@ -386,3 +386,55 @@ def test_unidades_de_verdade_c_e_d(tmp_path, indice):
     assert _hash(destino / "Samples" / "som.wav") == antes
     q.executar(q.planejar_desfazer(lote=r.lote_id))
     assert _hash(origem) == antes and not (destino / "Samples").exists()
+
+
+# --- pendências da 7B: esvaziar por unidade e quarentena de pasta inteira -----------------
+
+
+def test_esvaziar_so_uma_unidade(duas, indice):
+    q, c, d = duas
+    em_d = _criar(d / "Arquivo" / "velho.txt", _bytes(9))
+    q.executar(q.planejar_mover([c / "Downloads" / "instalador.exe", em_d]))
+    plano = q.planejar_esvaziar("d")  # aceita "d", "D", "D:"
+    assert [p.origem.name for p in plano.passos] == ["velho.txt"]  # o do C: nem aparece
+    assert "do D:" in plano.descricao
+    q.executar(plano)
+    restantes = indice.itens_na_quarentena()
+    assert len(restantes) == 1 and Path(restantes[0]["destino"]).is_relative_to(c / "_quarentena")
+    assert len(q.planejar_esvaziar().validos) == 1  # sem unidade: todas
+
+
+def test_quarentena_de_pasta_inteira_e_desfazer(duas, indice):
+    q, c, d = duas
+    pasta = c / "Musicas" / "Samples"
+    hashes = {p.relative_to(c): _hash(p) for p in pasta.rglob("*.wav")}
+    plano = q.planejar_mover([pasta])
+    assert len([p for p in plano.validos if not p.remover_pasta]) == 3
+    assert {p.origem.name for p in plano.validos if p.remover_pasta} == {"Samples", "Loops", "Vazia"}
+    r = q.executar(plano)
+    assert not r.falhas and not pasta.exists()  # foi inteira, até a subpasta que já estava vazia
+    assert (c / "Musicas").is_dir()  # a de cima fica
+    q.executar(q.planejar_desfazer(lote=r.lote_id))
+    assert {p.relative_to(c): _hash(p) for p in pasta.rglob("*.wav")} == hashes
+    assert (pasta / "Vazia").is_dir()
+
+
+def test_quarentena_de_pasta_bloco_inteira_e_recusada(duas):
+    q, c, d = duas
+    _criar(c / "Projeto" / ".git" / "HEAD")
+    _criar(c / "Projeto" / "main.py")
+    plano = q.planejar_mover([c / "Projeto"])
+    assert plano.validos == [] and "pasta-bloco" in plano.passos[0].problema
+    assert (c / "Projeto" / "main.py").exists()
+
+
+def test_raiz_do_projeto_no_exe(monkeypatch, tmp_path):
+    """No .exe (dist/Faxineiro/Faxineiro.exe) os dados continuam na raiz do projeto."""
+    import sys
+
+    monkeypatch.delenv("FAXINEIRO_RAIZ", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "proj" / "dist" / "Faxineiro" / "Faxineiro.exe"))
+    assert config._raiz_do_projeto() == (tmp_path / "proj").resolve()
+    monkeypatch.setenv("FAXINEIRO_RAIZ", str(tmp_path / "outra"))
+    assert config._raiz_do_projeto() == (tmp_path / "outra").resolve()

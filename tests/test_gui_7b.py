@@ -149,3 +149,32 @@ def test_pesados_move_os_marcados(janela, amb, pc, qtbot, monkeypatch):
     assert faxina.mover_pesados(escolher_destino=lambda _: str(d / "Arquivo"))
     _esperar(qtbot, amb)
     assert (d / "Arquivo" / "aula.mp4").exists() and not (c / "Videos" / "aula.mp4").exists()
+
+
+def test_quarentena_esvazia_so_a_unidade_escolhida(janela, amb, pc, qtbot, monkeypatch):
+    teste, c, d = pc
+    monkeypatch.setattr("faxineiro.gui.telas.quarentena.confirmar_previa", lambda plano, *a, **k: True)
+    monkeypatch.setattr("faxineiro.gui.telas.quarentena.confirmar_esvaziar", lambda *a, **k: True)
+    janela.ligar_pc_real(True, perguntar_texto=lambda: ("PC REAL", True))
+    q = amb.quarentena(amb.leitura)
+    q.executar(q.planejar_mover([c / "Samples" / "kick.wav", teste / "a.txt"]))
+    tela = janela.telas[4]
+    tela.atualizar()
+    opcoes = [tela.unidade_esvaziar.itemData(i) for i in range(tela.unidade_esvaziar.count())]
+    assert opcoes == [None, "C:", "T:"]
+    tela.unidade_esvaziar.setCurrentIndex(opcoes.index("C:"))
+    assert tela.esvaziar()
+    _esperar(qtbot, amb)
+    restantes = amb.leitura.itens_na_quarentena()
+    assert [Path(o["origem"]).name for o in restantes] == ["a.txt"]  # a do outro "disco" ficou
+
+
+def test_explorador_manda_pasta_inteira_para_quarentena(janela, amb, pc, qtbot, monkeypatch):
+    teste, c, d = pc
+    monkeypatch.setattr("faxineiro.gui.telas.explorador.confirmar_previa", lambda *a, **k: True)
+    janela.ligar_pc_real(True, perguntar_texto=lambda: ("PC REAL", True))
+    janela.trocar_pasta(c)
+    assert janela.telas[1].mandar_pasta_para_quarentena(c / "Samples")
+    _esperar(qtbot, amb)
+    assert not (c / "Samples").exists()
+    assert len(amb.leitura.itens_na_quarentena()) == 1

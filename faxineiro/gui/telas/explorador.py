@@ -324,8 +324,35 @@ class TelaExplorador(QWidget):
             return
         self.arvore.setCurrentItem(item)
         menu = QMenu(self)
+        menu.addAction("Mandar esta pasta para a quarentena…", self.mandar_pasta_para_quarentena)
         menu.addAction("Mover esta pasta para outra unidade…", self.mover_pasta_para_unidade)
         menu.exec(self.arvore.viewport().mapToGlobal(posicao))
+
+    def mandar_pasta_para_quarentena(self, pasta: Path | None = None) -> bool:
+        """A pasta INTEIRA vai para a quarentena (arquivos e subpastas; um desfazer recria tudo)."""
+        if pasta is None:
+            item = self.arvore.currentItem()
+            if item is None or item.data(0, PAPEL_CAMINHO) is None:
+                return False
+            pasta = Path(item.data(0, PAPEL_CAMINHO))
+        plano = self.amb.quarentena(self.amb.leitura).planejar_mover([pasta], f"pasta {pasta.name}")
+        if not confirmar_previa(plano, self.amb.pasta, "mandar a pasta para a quarentena", self):
+            return False
+
+        def trabalho(ctx):
+            with self.amb.abrir_indice() as indice:
+                return self.amb.quarentena(indice).executar(
+                    plano, parar=ctx.parar, ao_progredir=lambda f, t: ctx.avisar(f, t, f"Movendo {f}/{t}"))
+
+        def pronto(r) -> None:
+            arquivos = [p for p in r.feitos if not p.remover_pasta]
+            self.amb.mensagem(f"{pasta.name}: {len(arquivos)} arquivo(s) na quarentena (lote {r.lote_id}); "
+                              "dá para desfazer." + (f" {len(r.falhas)} com problema." if r.falhas else ""))
+            if r.falhas:
+                QMessageBox.warning(self, "Quarentena", "\n".join(f"{p.origem.name}: {m}" for p, m in r.falhas[:20]))
+            self.recarregar_arvore()
+
+        return self.amb.rodar("Mandando a pasta para a quarentena", trabalho, pronto)
 
     def _menu(self, posicao) -> None:
         if not self.tabela.indexAt(posicao).isValid():

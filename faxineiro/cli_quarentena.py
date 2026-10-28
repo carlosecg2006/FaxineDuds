@@ -66,12 +66,11 @@ def _mostrar_plano(plano: Plano, titulo: str) -> None:
         if p.problema:
             print(f"  {i:>3}. PULA  {origem}  — {p.problema}")
             continue
-        if plano.tipo == "mover_unidade":
-            if p.remover_pasta:
-                print(f"  {i:>3}. remove a pasta (se ficar vazia) {origem}")
-            else:
-                nota = "  (nome trocado: já existe um igual)" if p.renomeado else ""
-                print(f"  {i:>3}. {origem}  →  {p.destino}  ({formatar_bytes(p.tamanho)}){nota}")
+        if p.remover_pasta:
+            print(f"  {i:>3}. remove a pasta (se ficar vazia; o desfazer recria) {origem}")
+        elif plano.tipo == "mover_unidade":
+            nota = "  (nome trocado: já existe um igual)" if p.renomeado else ""
+            print(f"  {i:>3}. {origem}  →  {p.destino}  ({formatar_bytes(p.tamanho)}){nota}")
         elif p.quarentenar_copia:
             print(f"  {i:>3}. a cópia {origem} vai para a quarentena da unidade dela")
         elif plano.tipo == "esvaziar":
@@ -183,8 +182,9 @@ def cmd_listar(args: argparse.Namespace) -> int:
 def cmd_esvaziar(args: argparse.Namespace) -> int:
     indice, q = _abrir(args)
     try:
-        plano = q.planejar_esvaziar()
-        _mostrar_plano(plano, "ESVAZIAR A QUARENTENA (apaga de vez, sem volta)")
+        plano = q.planejar_esvaziar(args.unidade)
+        onde = f" DO {args.unidade.upper()}" if args.unidade else " (TODAS AS UNIDADES)"
+        _mostrar_plano(plano, f"ESVAZIAR A QUARENTENA{onde} (apaga de vez, sem volta)")
         if not plano.validos:
             print("Nada a apagar.")
             return 0
@@ -220,8 +220,8 @@ def registrar(sub: argparse._SubParsersAction) -> None:
             p.add_argument("--sim", action="store_true", help="não pergunta (a prévia aparece mesmo assim)")
         p.add_argument("--indice", default=str(CAMINHO_INDICE), help=argparse.SUPPRESS)
 
-    m = qsub.add_parser("mover", help="manda arquivos para a quarentena")
-    m.add_argument("arquivos", nargs="+")
+    m = qsub.add_parser("mover", help="manda arquivos (ou pastas inteiras) para a quarentena")
+    m.add_argument("arquivos", nargs="+", help="arquivos e/ou pastas")
     comum(m)
     m.set_defaults(func=cmd_mover)
 
@@ -244,6 +244,7 @@ def registrar(sub: argparse._SubParsersAction) -> None:
     u.set_defaults(func=cmd_desfazer)
 
     e = qsub.add_parser("esvaziar", help="APAGA DE VEZ o que está na quarentena (confirmação dupla)")
+    e.add_argument("--unidade", help="só a quarentena desta unidade, ex.: D: (sem isto: todas)")
     comum(e, com_sim=False)
     e.set_defaults(func=cmd_esvaziar)
 

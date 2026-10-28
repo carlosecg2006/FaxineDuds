@@ -107,6 +107,7 @@ bloqueio não pegaria:
 - Fase 5B: ffmpeg 9.0.2 "essentials" (gyan.dev) baixado para `externos\ffmpeg\`
   (fora do Git, nada instalado no Windows; SHA-256 conferido), Pillow + pillow-heif
   (imagens). LibreOffice (documentos) adiado.
+- Fase 7B: PyInstaller (só desenvolvimento) para gerar `dist\Faxineiro\Faxineiro.exe`
 - Fase 8: rclone com remoto `crypt` (Google Drive por padrão, trocável)
 - Fase 10: FastAPI (servidor local) + PWA (versão web para o celular)
 - Testes com pytest; commit no Git ao fim de cada fase
@@ -122,7 +123,7 @@ bloqueio não pegaria:
 | 5 | Interface | Concluída — app gráfico em PySide6 |
 | 5B | Conversor de arquivos | Concluída (imagens, áudio, vídeo; documentos adiados) — ver abaixo |
 | 6 | Pesquisa online | Opcional, desligada por padrão; nunca envia conteúdo |
-| 7 | PC real e .exe | 7A concluída (ler o PC real). 7B concluída (ações no PC real com o modo PC real). Falta: gerar o instalador (.exe) |
+| 7 | PC real e .exe | Concluída — 7A (ler o PC real) e 7B (ações no PC real com o modo PC real, esvaziar por unidade, Faxineiro.exe + atalho) |
 | 8 | Arquivo Morto na nuvem | Ver abaixo |
 | 9 | HD externo, pendrive e cartão | Ver abaixo |
 | 10 | Celular | Ver abaixo |
@@ -140,12 +141,14 @@ bloqueio não pegaria:
 - O arquivo convertido entra no índice automaticamente.
 
 ### Fase 7 — pendências
-- Resolvidas na 7B: caminhos com mais de 260 caracteres (prefixo `\\?\`,
-  `disco.py`; o Windows continua com `LongPathsEnabled = 0`) e a quarentena
-  por unidade.
-- Falta: gerar o instalador (.exe).
-- Ideia do Carlos: "esvaziar só uma unidade". Hoje o Esvaziar apaga o que
-  está em todas as quarentenas das áreas ligadas.
+- Todas resolvidas na 7B:
+  - caminhos com mais de 260 caracteres (prefixo `\\?\`, `disco.py`; o
+    Windows continua com `LongPathsEnabled = 0`);
+  - quarentena por unidade e esvaziar por unidade;
+  - `Faxineiro.exe`.
+- Não é um "instalador" de verdade (setup que instala em Arquivos de
+  Programas): é uma pasta pronta com o .exe e o atalho. Um setup (ex.: Inno
+  Setup) fica para quando o app for para outro PC.
 
 ### Fase 8 — Arquivo Morto na nuvem
 - O usuário escolhe arquivos e clica em "Arquivar".
@@ -298,7 +301,7 @@ bloqueio não pegaria:
   própria pasta pedida seja uma delas; o `espaco` mostra o total de cada uma (do índice,
   `indice.pastas_de_programa`; aninhada conta só na de fora). Real: C: 1,5 GB (curseforge,
   .vscode, .ollama, .claude, .gemini); D: 4,2 GB (.minecraft 4,1 GB). 339 testes.
-- Fase 7B — concluída (ações no PC real, sem o instalador .exe).
+- Fase 7B — concluída (ações no PC real; o .exe veio no fechamento, abaixo).
   - **Modo PC real:** `Ambiente.pc_real`, menu Segurança, faixa vermelha e
     `--pc-real` na linha de comando. Quarentena, organizar, converter e mover
     usam `config.areas_de_acao` + `protecoes.motivo_para_acao`.
@@ -352,6 +355,36 @@ bloqueio não pegaria:
       quarentena (lote 16, 15,8 s), desfazer (lote 17, 23 de 23 hashes iguais),
       de novo (lote 18): 194,3 MB em `D:\_quarentena`, esperando o Carlos
       esvaziar.
-    - Em 28/10 às 09:33 o Carlos esvaziou pelo app os lotes de teste 12–14.
-- Próxima: Fase 6 (pesquisa online, opcional), o instalador .exe da Fase 7
-  ou a Fase 8.
+    - Em 28/10 às 09:33 o Carlos esvaziou pelo app os lotes de teste 12–14;
+      às 09:52, o lote 18 (194,3 MB liberados no D:).
+  - **Fechamento da 7B (28/10/2026):**
+    - **Esvaziar por unidade:** `planejar_esvaziar(unidade="D:")` — a prévia
+      só lista aquela unidade. Tela Quarentena: escolha "Todas / Só o C: /
+      Só o D:". Linha de comando: `quarentena esvaziar --unidade D:`. Confirmação
+      dupla mantida (a 2ª diz de qual unidade). A `pasta_teste\_quarentena`
+      também fica no D:.
+    - **Quarentena de pasta inteira:** `planejar_mover` aceita pastas. Todos
+      os arquivos vão e depois todas as subpastas e ela mesma saem (inclusive
+      as que já estavam vazias), no mesmo lote; um desfazer recria tudo.
+      Pasta-bloco, nuvem ou link dentro → recusa a pasta toda. Explorador:
+      botão direito na árvore → "Mandar esta pasta para a quarentena…".
+    - **Faxineiro.exe (PyInstaller 6.22, modo pasta, sem console):**
+      - gerar: `.venv\Scripts\python ferramentas\gerar_exe.py` → `dist\Faxineiro\`
+        (136 MB, fora do Git);
+      - atalho: `powershell -ExecutionPolicy Bypass -File ferramentas\criar_atalho.ps1`
+        → `C:\Users\Carlos Eduardo\OneDrive\Área de Trabalho\Faxineiro.lnk`
+        (a Área de Trabalho fica no OneDrive);
+      - o .exe usa os mesmos `dados\`, `pasta_teste\` e `externos\ffmpeg`
+        (`config._raiz_do_projeto`: 3 níveis acima do .exe, ou
+        `FAXINEIRO_RAIZ`); o ffmpeg NÃO vai dentro;
+      - sem console, os erros vão para `dados\faxineiro_exe.log`
+        (`ferramentas\entrada_exe.py`);
+      - abre em ~1,6 s; na 1ª vez depois de gerar, ~15 s (o Windows inspeciona
+        os arquivos novos); 84 MB de RAM;
+      - `Abrir Faxineiro.bat` continua valendo para o modo desenvolvimento.
+      - Depois de mudar o código, gerar o .exe de novo.
+    - **Pastas FaxineiroTeste:** mandadas para a quarentena pela linha de
+      comando (lote 20: 12 arquivos, 6,7 MB, 11 pastas; 0 problemas),
+      esperando o Carlos esvaziar.
+    - 377 testes (345 comuns + 1 pulado, 31 de interface), pelo `testar.py`.
+- Próxima: Fase 6 (pesquisa online, opcional) ou Fase 8 (Arquivo Morto).
